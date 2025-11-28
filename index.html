@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Drone Defender 3D</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- HUD (marcadores) -->
+  <div id="hud">
+    <div>Puntuación: <span id="score">0</span></div>
+    <div>Vidas: <span id="lives">3</span></div>
+  </div>
+
+  <!-- Mira -->
+  <div id="crosshair"></div>
+
+  <!-- Contenedor para el canvas de Three.js -->
+  <div id="game-container"></div>
+
+  <!-- Three.js desde CDN (GLOBAL, sin módulos) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+  <!-- Nuestro código del juego -->
+  <script src="script.js"></script>
+</body>
+</html>
