@@ -4,26 +4,25 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
   font-family: Arial, sans-serif;
 }
 
-/* Fondo tipo cielo (por si acaso) */
 body {
   background: linear-gradient(#020314, #0a1a4a);
   color: #fff;
 }
 
-/* Contenedor del canvas 3D */
 #game-container {
   width: 100vw;
   height: 100vh;
 }
 
-/* HUD */
+/* HUD principal */
 #hud {
   position: fixed;
   top: 10px;
@@ -31,11 +30,33 @@ body {
   display: flex;
   gap: 20px;
   font-size: 18px;
-  z-index: 10;
+  z-index: 20;
   text-shadow: 0 0 5px #000;
 }
 
-/* Mira en el centro de la pantalla */
+/* Barra de vida */
+#health-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  height: 18px;
+  border: 2px solid #ffffffaa;
+  border-radius: 10px;
+  background: #111a;
+  z-index: 20;
+  overflow: hidden;
+}
+
+#health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #00ff6a, #ffd000);
+  transition: width 0.2s ease-out;
+}
+
+/* Mira */
 #crosshair {
   position: fixed;
   top: 50%;
@@ -47,6 +68,58 @@ body {
   border-radius: 50%;
   border: 2px solid #ffffffaa;
   box-shadow: 0 0 8px #ffffffaa;
-  z-index: 10;
+  z-index: 20;
   pointer-events: none;
+}
+
+/* Overlays (inicio y game over) */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at top, #0a1a4aee, #000000ee);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-content {
+  text-align: center;
+  max-width: 480px;
+  padding: 30px 40px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 16px;
+  box-shadow: 0 0 20px #00ffff55;
+}
+
+.overlay-content h1,
+.overlay-content h2 {
+  margin-bottom: 16px;
+}
+
+.overlay-content p {
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.overlay-content button {
+  padding: 10px 24px;
+  border-radius: 999px;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: bold;
+  background: linear-gradient(90deg, #00ffff, #00b7ff);
+  color: #000;
+  box-shadow: 0 0 10px #00ffffaa;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.overlay-content button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px #00ffffff;
 }

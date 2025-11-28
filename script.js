@@ -1,41 +1,65 @@
-// -----------------------------
-// VARIABLES GLOBALES
-// -----------------------------
-const euler = new THREE.Euler(0, 0, 0, "YXZ");
-const PI_2 = Math.PI / 2;
+// ----------------------------------------
+// DRONE DEFENDER 3D – Shooter básico
+// ----------------------------------------
 
-
+// Escena básica
 let scene, camera, renderer;
 let ground;
 let weapon;
+let weaponBarrel; // referencia al cañón del arma
+let muzzleFlash;
+
 const enemies = [];
+const deathEffects = [];
+const bullets = []; // proyectiles
 
+// Estado del juego
+const MAX_LIVES = 3;
 let score = 0;
-let lives = 3;
+let lives = MAX_LIVES;
+let wave = 1;
+let gameState = "menu"; // "menu" | "playing" | "gameover"
 
-const raycaster = new THREE.Raycaster();
-const shootDirection = new THREE.Vector3();
-
-const scoreEl = document.getElementById("score");
-const livesEl = document.getElementById("lives");
-
-// Control tipo FPS
-let pointerLocked = false;
-const moveSpeed = 10;
-
-const keys = {
-  w: false,
-  a: false,
-  s: false,
-  d: false
-};
-
+// Tiempo
 let prevTime = performance.now() / 1000;
 let lastSpawnTime = 0;
 
-// -----------------------------
-// INICIALIZACIÓN
-// -----------------------------
+// Spawn / dificultad
+const SPAWN_POSITIONS = [
+  { x: -20, z: -20 },
+  { x: 0, z: -25 },
+  { x: 20, z: -20 },
+  { x: -20, z: 20 },
+  { x: 0, z: 25 },
+  { x: 20, z: 20 }
+];
+
+// Cámara FPS (pointer lock)
+let pointerLocked = false;
+const euler = new THREE.Euler(0, 0, 0, "YXZ");
+const PI_2 = Math.PI / 2;
+
+const moveSpeed = 10;
+const keys = { w: false, a: false, s: false, d: false };
+
+// Efectos temporizados
+let muzzleFlashTime = 0;
+
+// HUD / DOM
+const scoreEl = document.getElementById("score");
+const livesEl = document.getElementById("lives");
+const waveEl = document.getElementById("wave-number");
+const healthFillEl = document.getElementById("health-fill");
+
+const startScreenEl = document.getElementById("start-screen");
+const startButtonEl = document.getElementById("start-button");
+const gameOverScreenEl = document.getElementById("game-over-screen");
+const finalScoreEl = document.getElementById("final-score");
+const restartButtonEl = document.getElementById("restart-button");
+
+// ----------------------------------------
+// INIT
+// ----------------------------------------
 function init() {
   const container = document.getElementById("game-container");
 
@@ -48,10 +72,10 @@ function init() {
   const near = 0.1;
   const far = 1000;
   camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-  camera.rotation.order = "YXZ";
   camera.position.set(0, 2, 10);
+  camera.rotation.order = "YXZ";
 
-  // Renderizador
+  // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -68,45 +92,52 @@ function init() {
   // Suelo + grid
   createGround();
 
-  // Cielo / niebla
+  // Niebla
   scene.fog = new THREE.Fog(0x020314, 20, 80);
 
-  // Arma 3D pegada a la cámara
-  createWeapon();
+  // Arma
+  createWeaponLowPoly();
+  createMuzzleFlash();
 
-  // Añadir la cámara a la escena
+  // Añadir cámara a la escena
   scene.add(camera);
 
-  // Eventos de ventana
+  // Eventos
   window.addEventListener("resize", onWindowResize);
 
-  // Pointer lock (click sobre el canvas)
   const canvas = renderer.domElement;
   canvas.addEventListener("click", () => {
-    canvas.requestPointerLock();
+    if (gameState === "playing") {
+      canvas.requestPointerLock();
+    }
   });
 
   document.addEventListener("pointerlockchange", () => {
     pointerLocked = document.pointerLockElement === canvas;
   });
 
-  // Ratón para mirar
   document.addEventListener("mousemove", onMouseMove);
-
-  // Teclado para moverse
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
+  document.addEventListener("mousedown", onMouseShoot);
 
-  // Disparo con click
-  document.addEventListener("mousedown", onShoot);
+  // Botones
+  startButtonEl.addEventListener("click", startGame);
+  restartButtonEl.addEventListener("click", () => window.location.reload());
 
-  // Empezar bucle
+  // Estado inicial HUD
+  updateScore();
+  updateLives();
+  updateWave();
+  updateHealthBar();
+
+  // Bucle
   animate();
 }
 
-// -----------------------------
-// CREAR SUELO
-// -----------------------------
+// ----------------------------------------
+// ESCENARIO
+// ----------------------------------------
 function createGround() {
   const geometry = new THREE.PlaneGeometry(40, 40);
   const material = new THREE.MeshPhongMaterial({
@@ -123,154 +154,299 @@ function createGround() {
   scene.add(gridHelper);
 }
 
-// -----------------------------
-// ARMA (1ª PERSONA)
-// -----------------------------
-function createWeapon() {
-  const geom = new THREE.BoxGeometry(0.5, 0.5, 1.5);
-  const mat = new THREE.MeshPhongMaterial({ color: 0x00ffff });
-  weapon = new THREE.Mesh(geom, mat);
+// ----------------------------------------
+// ARMA LOW-POLY
+// ----------------------------------------
+function createWeaponLowPoly() {
+  const group = new THREE.Group();
 
+  // Cuerpo principal
+  const bodyGeom = new THREE.BoxGeometry(0.2, 0.2, 1.0);
+  const bodyMat = new THREE.MeshPhongMaterial({ color: 0x0099ff });
+  const body = new THREE.Mesh(bodyGeom, bodyMat);
+  body.position.set(0, -0.05, -0.3);
+  group.add(body);
+
+  // Empuñadura
+  const gripGeom = new THREE.BoxGeometry(0.12, 0.25, 0.18);
+  const gripMat = new THREE.MeshPhongMaterial({ color: 0x004477 });
+  const grip = new THREE.Mesh(gripGeom, gripMat);
+  grip.position.set(0, -0.2, 0.1);
+  grip.rotation.x = -0.4;
+  group.add(grip);
+
+  // Cañón
+  const barrelGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+  const barrelMat = new THREE.MeshPhongMaterial({ color: 0x00ffff });
+  const barrel = new THREE.Mesh(barrelGeom, barrelMat);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.02, -0.8);
+  group.add(barrel);
+
+  // Guardamos referencia al cañón para saber desde dónde salen las balas
+  weaponBarrel = barrel;
+
+  // Detalle superior (mira / rail)
+  const topGeom = new THREE.BoxGeometry(0.08, 0.06, 0.4);
+  const topMat = new THREE.MeshPhongMaterial({ color: 0x00ffe0 });
+  const top = new THREE.Mesh(topGeom, topMat);
+  top.position.set(0, 0.08, -0.1);
+  group.add(top);
+
+  weapon = group;
   camera.add(weapon);
   weapon.position.set(0.6, -0.7, -1.5);
 }
 
-// -----------------------------
-// ENEMIGOS (DRONES)
-// -----------------------------
+// Muzzle flash
+function createMuzzleFlash() {
+  const geom = new THREE.SphereGeometry(0.08, 8, 8);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffaa,
+    transparent: true,
+    opacity: 0.0
+  });
+  muzzleFlash = new THREE.Mesh(geom, mat);
+  muzzleFlash.position.set(0, 0.02, -0.95); // en el cañón del arma
+  weapon.add(muzzleFlash);
+}
+
+// ----------------------------------------
+// SPAWNER DE ENEMIGOS (OLEADAS)
+// ----------------------------------------
 function spawnEnemy() {
   const geom = new THREE.SphereGeometry(0.6, 16, 16);
   const mat = new THREE.MeshPhongMaterial({ color: 0xff5555 });
   const enemy = new THREE.Mesh(geom, mat);
 
-  const x = (Math.random() - 0.5) * 20; // dispersión horizontal
-  const z = -40; // lejos delante
-  enemy.position.set(x, 1.5, z);
+  const basePos = SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)];
+  const jitterX = (Math.random() - 0.5) * 4;
+  const jitterZ = (Math.random() - 0.5) * 4;
 
-  enemy.userData.speed = 6;
+  enemy.position.set(basePos.x + jitterX, 1.5, basePos.z + jitterZ);
+
+  const speed = 4 + (wave - 1) * 0.6;
+  enemy.userData.speed = speed;
+  enemy.userData.time = 0;
+  enemy.userData.bobAmplitude = 0.4 + Math.random() * 0.4;
+  enemy.userData.bobSpeed = 1.5 + Math.random() * 1.0;
+
   enemies.push(enemy);
   scene.add(enemy);
 }
 
-// -----------------------------
+// Intervalo de aparición según oleada
+function getSpawnInterval() {
+  const base = 2.0;
+  const min = 0.6;
+  return Math.max(min, base - (wave - 1) * 0.15);
+}
+
+// Wave según puntuación (cada 10 kills sube)
+function updateWaveFromScore() {
+  const newWave = Math.floor(score / 10) + 1;
+  if (newWave !== wave) {
+    wave = newWave;
+    updateWave();
+  }
+}
+
+// ----------------------------------------
 // CONTROLES
-// -----------------------------
+// ----------------------------------------
 function onMouseMove(event) {
-  if (!pointerLocked) return;
+  if (!pointerLocked || gameState !== "playing") return;
 
   const sensitivity = 0.002;
 
-  // Tomamos la rotación actual de la cámara
   euler.setFromQuaternion(camera.quaternion);
 
-  // Yaw: izquierda/derecha (eje Y)
-  euler.y -= event.movementX * sensitivity;
+  euler.y -= event.movementX * sensitivity; // yaw
+  euler.x -= event.movementY * sensitivity; // pitch
 
-  // Pitch: arriba/abajo (eje X)
-  // Aquí usamos el mismo signo que PointerLockControls
-  euler.x -= event.movementY * sensitivity;
-
-  // Limitar pitch para no romper el cuello (evitar volteretas)
-  const max = PI_2 - 0.1; // un pelín menos de 90º
+  const max = PI_2 - 0.1;
   if (euler.x > max) euler.x = max;
   if (euler.x < -max) euler.x = -max;
 
-  // Aplicar de vuelta a la cámara
   camera.quaternion.setFromEuler(euler);
 }
 
-
 function onKeyDown(event) {
-  // Evitar que las flechas y la barra espaciadora hagan scroll en la página
   const toBlock = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
-  if (toBlock.includes(event.code)) {
-    event.preventDefault();
-  }
+  if (toBlock.includes(event.code)) event.preventDefault();
 
-  // WASD
-  if (event.code === "KeyW") keys.w = true;
-  if (event.code === "KeyA") keys.a = true;
-  if (event.code === "KeyS") keys.s = true;
-  if (event.code === "KeyD") keys.d = true;
-
-  // Opcional: usar también flechas para moverse
-  if (event.code === "ArrowUp") keys.w = true;
-  if (event.code === "ArrowDown") keys.s = true;
-  if (event.code === "ArrowLeft") keys.a = true;
-  if (event.code === "ArrowRight") keys.d = true;
+  if (event.code === "KeyW" || event.code === "ArrowUp") keys.w = true;
+  if (event.code === "KeyS" || event.code === "ArrowDown") keys.s = true;
+  if (event.code === "KeyA" || event.code === "ArrowLeft") keys.a = true;
+  if (event.code === "KeyD" || event.code === "ArrowRight") keys.d = true;
 }
 
 function onKeyUp(event) {
-  if (event.code === "KeyW") keys.w = false;
-  if (event.code === "KeyA") keys.a = false;
-  if (event.code === "KeyS") keys.s = false;
-  if (event.code === "KeyD") keys.d = false;
-
-  // Soltar flechas también suelta el movimiento
-  if (event.code === "ArrowUp") keys.w = false;
-  if (event.code === "ArrowDown") keys.s = false;
-  if (event.code === "ArrowLeft") keys.a = false;
-  if (event.code === "ArrowRight") keys.d = false;
+  if (event.code === "KeyW" || event.code === "ArrowUp") keys.w = false;
+  if (event.code === "KeyS" || event.code === "ArrowDown") keys.s = false;
+  if (event.code === "KeyA" || event.code === "ArrowLeft") keys.a = false;
+  if (event.code === "KeyD" || event.code === "ArrowRight") keys.d = false;
 }
 
-// -----------------------------
-// DISPARO
-// -----------------------------
-function onShoot(event) {
-  if (!pointerLocked) return; // si aún no tenemos el ratón bloqueado, no disparamos
+function onMouseShoot() {
+  if (!pointerLocked || gameState !== "playing") return;
+  shootFromCamera();
+}
 
-  shootDirection.set(0, 0, -1);
-  shootDirection.applyQuaternion(camera.quaternion);
+// ----------------------------------------
+// DISPARO + PROYECTILES
+// ----------------------------------------
+function shootFromCamera() {
+  // Dirección hacia delante
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
 
-  raycaster.set(camera.position.clone(), shootDirection);
-
-  const intersects = raycaster.intersectObjects(enemies, false);
-  if (intersects.length > 0) {
-    const hit = intersects[0].object;
-    destroyEnemy(hit);
-    addScore(1);
+  // Origen en la punta del cañón
+  const origin = new THREE.Vector3();
+  if (weaponBarrel) {
+    weaponBarrel.getWorldPosition(origin);
+  } else {
+    origin.copy(camera.position);
   }
+
+  spawnBullet(origin, direction);
+  triggerMuzzleFlash();
+}
+
+function spawnBullet(origin, direction) {
+  const geom = new THREE.SphereGeometry(0.08, 8, 8);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  const bullet = new THREE.Mesh(geom, mat);
+
+  bullet.position.copy(origin);
+  bullet.userData.direction = direction.clone();
+  bullet.userData.speed = 60; // velocidad de la bala
+  bullet.userData.life = 0;   // tiempo de vida
+
+  bullets.push(bullet);
+  scene.add(bullet);
+}
+
+function updateBullets(delta) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const bullet = bullets[i];
+
+    // Avanzar
+    bullet.position.addScaledVector(
+      bullet.userData.direction,
+      bullet.userData.speed * delta
+    );
+    bullet.userData.life += delta;
+
+    // Si lleva mucho tiempo, se destruye
+    if (bullet.userData.life > 2.0) {
+      scene.remove(bullet);
+      bullets.splice(i, 1);
+      continue;
+    }
+
+    // Colisión con enemigos (distancia simple)
+    let hit = false;
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const enemy = enemies[j];
+      const dist = bullet.position.distanceTo(enemy.position);
+      const hitRadius = 0.6 + 0.1; // radio enemigo + bullet
+
+      if (dist < hitRadius) {
+        destroyEnemy(enemy);
+        addScore(1);
+        hit = true;
+        break;
+      }
+    }
+
+    if (hit) {
+      scene.remove(bullet);
+      bullets.splice(i, 1);
+    }
+  }
+}
+
+function triggerMuzzleFlash() {
+  muzzleFlashTime = 0.08;
+  muzzleFlash.material.opacity = 1.0;
+  muzzleFlash.scale.set(1, 1, 1);
 }
 
 function destroyEnemy(enemy) {
   const index = enemies.indexOf(enemy);
   if (index !== -1) enemies.splice(index, 1);
+  createDeathEffect(enemy.position.clone());
   scene.remove(enemy);
 }
 
+function createDeathEffect(position) {
+  const geom = new THREE.SphereGeometry(0.4, 10, 10);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00,
+    transparent: true,
+    opacity: 0.8
+  });
+  const effect = new THREE.Mesh(geom, mat);
+  effect.position.copy(position);
+
+  deathEffects.push({ mesh: effect, time: 0 });
+  scene.add(effect);
+}
+
+// ----------------------------------------
+// GAMEPLAY: VIDA / HUD
+// ----------------------------------------
 function addScore(amount) {
   score += amount;
-  scoreEl.textContent = score;
+  updateScore();
+  updateWaveFromScore();
 }
 
 function damagePlayer(amount) {
   lives -= amount;
   if (lives < 0) lives = 0;
-  livesEl.textContent = lives;
+  updateLives();
+  updateHealthBar();
 
-  if (lives <= 0) {
-    gameOver();
-  }
+  if (lives <= 0) gameOver();
+}
+
+function updateScore() {
+  scoreEl.textContent = score;
+}
+
+function updateLives() {
+  livesEl.textContent = lives;
+}
+
+function updateWave() {
+  waveEl.textContent = wave;
+}
+
+function updateHealthBar() {
+  const ratio = lives / MAX_LIVES;
+  healthFillEl.style.width = `${Math.max(0, ratio) * 100}%`;
+}
+
+function startGame() {
+  if (gameState !== "menu") return;
+  gameState = "playing";
+  startScreenEl.classList.add("hidden");
+  prevTime = performance.now() / 1000;
+  lastSpawnTime = prevTime;
 }
 
 function gameOver() {
-  alert("GAME OVER\nPuntuación: " + score);
-  // Reinicio rápido
-  window.location.reload();
+  if (gameState === "gameover") return;
+  gameState = "gameover";
+  finalScoreEl.textContent = score;
+  gameOverScreenEl.classList.remove("hidden");
+  document.exitPointerLock?.();
 }
 
-// -----------------------------
-// REDIMENSIÓN
-// -----------------------------
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// -----------------------------
-// BUCLE PRINCIPAL
-// -----------------------------
+// ----------------------------------------
+// LOOP
+// ----------------------------------------
 function animate() {
   requestAnimationFrame(animate);
 
@@ -278,19 +454,28 @@ function animate() {
   const delta = currentTime - prevTime;
   prevTime = currentTime;
 
-  // Spawner de enemigos cada 2 segundos aprox.
-  if (currentTime - lastSpawnTime > 2) {
-    spawnEnemy();
-    lastSpawnTime = currentTime;
-  }
+  if (gameState === "playing") {
+    // Spawn enemigos
+    if (currentTime - lastSpawnTime > getSpawnInterval()) {
+      spawnEnemy();
+      lastSpawnTime = currentTime;
+    }
 
-  // Movimiento FPS si tenemos el ratón bloqueado
-  if (pointerLocked) {
-    movePlayer(delta);
-  }
+    // Movimiento jugador
+    if (pointerLocked) {
+      movePlayer(delta);
+    }
 
-  // Mover enemigos hacia el jugador
-  updateEnemies(delta);
+    // Enemigos
+    updateEnemies(delta, currentTime);
+
+    // Balas
+    updateBullets(delta);
+
+    // Efectos
+    updateMuzzleFlash(delta);
+    updateDeathEffects(delta);
+  }
 
   renderer.render(scene, camera);
 }
@@ -317,20 +502,30 @@ function movePlayer(delta) {
   }
 }
 
-function updateEnemies(delta) {
+function updateEnemies(delta, currentTime) {
   for (let i = enemies.length - 1; i >= 0; i--) {
     const enemy = enemies[i];
+    enemy.userData.time += delta;
 
-    const dir = new THREE.Vector3().subVectors(
-      camera.position.clone().setY(1.5),
-      enemy.position
-    );
+    const playerPos = camera.position.clone();
+    playerPos.y = 1.5;
+
+    const dir = new THREE.Vector3().subVectors(playerPos, enemy.position);
     const dist = dir.length();
-
     dir.normalize();
+
+    // Avance hacia el jugador
     enemy.position.addScaledVector(dir, enemy.userData.speed * delta);
 
-    // Si llega demasiado cerca del jugador, daño
+    // Zig-zag lateral
+    const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+    const sway = Math.sin(enemy.userData.time * enemy.userData.bobSpeed) * enemy.userData.bobAmplitude;
+    enemy.position.addScaledVector(side, sway * delta * 4.0);
+
+    // Flotación vertical ligera
+    enemy.position.y = 1.5 + Math.sin(enemy.userData.time * 1.5) * 0.3;
+
+    // Colisión con jugador
     if (dist < 1.5) {
       destroyEnemy(enemy);
       damagePlayer(1);
@@ -338,7 +533,50 @@ function updateEnemies(delta) {
   }
 }
 
-// -----------------------------
+function updateMuzzleFlash(delta) {
+  if (muzzleFlashTime > 0) {
+    muzzleFlashTime -= delta;
+    if (muzzleFlashTime <= 0) {
+      muzzleFlash.material.opacity = 0.0;
+    } else {
+      const t = muzzleFlashTime / 0.08;
+      muzzleFlash.material.opacity = t;
+      const s = 1 + (1 - t) * 0.8;
+      muzzleFlash.scale.set(s, s, s);
+    }
+  }
+}
+
+function updateDeathEffects(delta) {
+  for (let i = deathEffects.length - 1; i >= 0; i--) {
+    const eff = deathEffects[i];
+    eff.time += delta;
+
+    const life = 0.4;
+    const t = eff.time / life;
+
+    if (t >= 1) {
+      scene.remove(eff.mesh);
+      deathEffects.splice(i, 1);
+      continue;
+    }
+
+    const s = 1 + t * 2;
+    eff.mesh.scale.set(s, s, s);
+    eff.mesh.material.opacity = 0.8 * (1 - t);
+  }
+}
+
+// ----------------------------------------
+// REDIMENSIÓN
+// ----------------------------------------
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ----------------------------------------
 // INICIO
-// -----------------------------
+// ----------------------------------------
 init();

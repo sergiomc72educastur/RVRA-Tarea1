@@ -10,18 +10,45 @@
   <div id="hud">
     <div>Puntuación: <span id="score">0</span></div>
     <div>Vidas: <span id="lives">3</span></div>
+    <div>Oleada: <span id="wave-number">1</span></div>
+  </div>
+
+  <!-- Barra de vida -->
+  <div id="health-bar">
+    <div id="health-fill"></div>
   </div>
 
   <!-- Mira -->
   <div id="crosshair"></div>
 
+  <!-- Pantalla de inicio -->
+  <div id="start-screen" class="overlay">
+    <div class="overlay-content">
+      <h1>Drone Defender 3D</h1>
+      <p>
+        Defiendete de las oleadas de drones desde la plataforma.<br />  
+        <br />
+        <strong>Controles:</strong> WASD / Flechas para moverte, ratón para mirar, clic para disparar.
+      </p>
+      <button id="start-button">Comenzar</button>
+    </div>
+  </div>
+
+  <!-- Pantalla Game Over -->
+  <div id="game-over-screen" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Game Over</h2>
+      <p>Puntuación final: <span id="final-score">0</span></p>
+      <button id="restart-button">Reintentar</button>
+    </div>
+  </div>
+
   <!-- Contenedor para el canvas de Three.js -->
   <div id="game-container"></div>
 
-  <!-- Three.js desde CDN (GLOBAL, sin módulos) -->
+  <!-- Three.js global -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-
-  <!-- Nuestro código del juego -->
+  <!-- Nuestro código -->
   <script src="script.js"></script>
 </body>
 </html>
