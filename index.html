@@ -2,21 +2,43 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Drone Defender 3D</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- HUD (marcadores) -->
-  <div id="hud">
-    <div>Puntuación: <span id="score">0</span></div>
-    <div>Vidas: <span id="lives">3</span></div>
-    <div>Oleada: <span id="wave-number">1</span></div>
+  <!-- HUD (marcadores superiores) -->
+  <header id="hud">
+    <div class="hud-item">
+      <span class="hud-label">Puntuación</span>
+      <span id="score" class="hud-value">0</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Vidas</span>
+      <span id="lives" class="hud-value">3</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Oleada</span>
+      <span id="wave-number" class="hud-value">1</span>
+    </div>
+  </header>
+
+<!-- CONTENEDOR HUD INFERIOR -->
+<div id="bottom-hud">
+  
+  <!-- Barra de vida -->
+  <div id="health-bar" class="hud-bar horizontal">
+    <div id="health-fill" class="hud-bar-fill"></div>
   </div>
 
-  <!-- Barra de vida -->
-  <div id="health-bar">
-    <div id="health-fill"></div>
+  <!-- Barra de stamina -->
+  <div id="stamina-bar" class="hud-bar horizontal stamina">
+    <div id="stamina-fill" class="hud-bar-fill"></div>
   </div>
+
+</div>
+
+
 
   <!-- Mira -->
   <div id="crosshair"></div>
@@ -24,22 +46,68 @@
   <!-- Pantalla de inicio -->
   <div id="start-screen" class="overlay">
     <div class="overlay-content">
-      <h1>Drone Defender 3D</h1>
-      <p>
-        Defiendete de las oleadas de drones desde la plataforma.<br />  
-        <br />
-        <strong>Controles:</strong> WASD / Flechas para moverte, ratón para mirar, clic para disparar.
+      <h1 class="game-title">Drone Defender <span>3D</span></h1>
+      <p class="game-subtitle">
+        Plataforma orbital – Sector Neon-09
       </p>
-      <button id="start-button">Comenzar</button>
+
+      <div class="overlay-grid">
+        <!-- Objetivo -->
+        <div class="overlay-panel">
+          <h2>Objetivo</h2>
+          <ul>
+            <li>Sobrevive el máximo número de oleadas.</li>
+            <li>Los drones te dañan al contacto.</li>
+            <li>Recupera control, muévete y usa las coberturas.</li>
+          </ul>
+        </div>
+
+        <!-- Controles -->
+        <div class="overlay-panel">
+          <h2>Controles</h2>
+          <ul class="controls-list">
+            <li><strong>W / A / S / D</strong> – Movimiento</li>
+            <li><strong>Ratón</strong> – Mirar / Apuntar</li>
+            <li><strong>Click Izquierdo</strong> – Disparar (automático)</li>
+            <li><strong>SHIFT Izq.</strong> – Sprint (consume <span class="tag-stamina">stamina</span>)</li>
+            <li><strong>ESPACIO</strong> – Saltar (solo al tocar el suelo)</li>
+            <li><strong>F</strong> – Linterna táctica</li>
+          </ul>
+        </div>
+
+        <!-- Mecánicas extra -->
+        <div class="overlay-panel full-width">
+          <h2>Mecánicas avanzadas</h2>
+          <ul>
+            <li>La barra verde muestra tu <strong>vida</strong>.</li>
+            <li>La barra azul muestra tu <strong>stamina de sprint</strong>: se gasta al correr y se regenera al caminar o detenerte.</li>
+            <li>No puedes saltar en el aire: espera a volver a tocar la plataforma.</li>
+            <li>Los drones intentan flanquearte y pueden atascarse momentáneamente tras las coberturas.</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="pointer-lock-hint">
+        Tras pulsar <strong>Comenzar</strong>, haz clic en la pantalla de juego para capturar el ratón y entrar en modo vista libre.
+      </p>
+
+      <button id="start-button" class="primary-btn">
+        Iniciar misión
+      </button>
     </div>
   </div>
 
   <!-- Pantalla Game Over -->
   <div id="game-over-screen" class="overlay hidden">
     <div class="overlay-content">
-      <h2>Game Over</h2>
+      <h2 class="game-over-title">Game Over</h2>
       <p>Puntuación final: <span id="final-score">0</span></p>
-      <button id="restart-button">Reintentar</button>
+      <p class="game-over-subtitle">
+        Los drones han tomado la plataforma… ¿Listo para otro intento?
+      </p>
+      <button id="restart-button" class="primary-btn">
+        Reintentar
+      </button>
     </div>
   </div>
 

@@ -34,6 +34,27 @@ body {
   text-shadow: 0 0 5px #000;
 }
 
+#bottom-hud {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;      
+  gap: 12px;                /* separación entre barras */
+  z-index: 20;
+}
+
+.hud-bar.horizontal {
+  width: 160px;             /* ancho recomendado */
+  height: 14px;
+  border: 1px solid #ffffff66;
+  background: #00000055;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+
 /* Barra de vida */
 #health-bar {
   position: fixed;
@@ -56,6 +77,45 @@ body {
   transition: width 0.2s ease-out;
 }
 
+/* Contenedor genérico de barras del HUD*/
+.hud-bar {
+  position: relative;
+  width: 200px;
+  height: 14px;
+  border: 1px solid #ffffff66;
+  background: #00000055;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+/* Relleno de cualquier barra */
+.hud-bar-fill {
+  height: 100%;
+  width: 100%;
+  transition: width 0.15s linear;
+}
+
+/* Barra de vida que ya tienes (ejemplo) */
+#health-bar .hud-bar-fill {
+  background: linear-gradient(90deg, #42ff7b, #00b341);
+}
+
+/* NUEVA barra de stamina */
+#stamina-bar .hud-bar-fill {
+  background: linear-gradient(90deg, #00e2ff, #0074ff);
+}
+
+/* Opcional: colocarla debajo de la vida en el HUD */
+#health-bar {
+  margin-bottom: 4px;
+}
+
+#stamina-bar {
+  margin-top: 2px;
+}
+
+
 /* Mira */
 #crosshair {
   position: fixed;
@@ -70,6 +130,7 @@ body {
   box-shadow: 0 0 8px #ffffffaa;
   z-index: 20;
   pointer-events: none;
+  background-color: yellow;
 }
 
 /* Overlays (inicio y game over) */
