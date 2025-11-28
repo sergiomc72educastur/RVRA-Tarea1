@@ -10,35 +10,31 @@
   <!-- HUD (marcadores superiores) -->
   <header id="hud">
     <div class="hud-item">
-      <span class="hud-label">Puntuación</span>
-      <span id="score" class="hud-value">0</span>
+      <span class="hud-label hud-label-score">Puntuación</span>
+      <span id="score" class="hud-value hud-value-score">0</span>
     </div>
     <div class="hud-item">
-      <span class="hud-label">Vidas</span>
-      <span id="lives" class="hud-value">3</span>
+      <span class="hud-label hud-label-life">Vidas</span>
+      <span id="lives" class="hud-value hud-value-life">3</span>
     </div>
     <div class="hud-item">
-      <span class="hud-label">Oleada</span>
-      <span id="wave-number" class="hud-value">1</span>
+      <span class="hud-label hud-label-wave">Oleada</span>
+      <span id="wave-number" class="hud-value hud-value-wave">1</span>
     </div>
   </header>
 
-<!-- CONTENEDOR HUD INFERIOR -->
-<div id="bottom-hud">
-  
-  <!-- Barra de vida -->
-  <div id="health-bar" class="hud-bar horizontal">
-    <div id="health-fill" class="hud-bar-fill"></div>
+  <!-- HUD inferior: barras -->
+  <div id="bottom-hud">
+    <!-- Barra de vida -->
+    <div id="health-bar" class="hud-bar horizontal">
+      <div id="health-fill" class="hud-bar-fill"></div>
+    </div>
+
+    <!-- Barra de stamina -->
+    <div id="stamina-bar" class="hud-bar horizontal stamina">
+      <div id="stamina-fill" class="hud-bar-fill"></div>
+    </div>
   </div>
-
-  <!-- Barra de stamina -->
-  <div id="stamina-bar" class="hud-bar horizontal stamina">
-    <div id="stamina-fill" class="hud-bar-fill"></div>
-  </div>
-
-</div>
-
-
 
   <!-- Mira -->
   <div id="crosshair"></div>
@@ -46,9 +42,11 @@
   <!-- Pantalla de inicio -->
   <div id="start-screen" class="overlay">
     <div class="overlay-content">
-      <h1 class="game-title">Drone Defender <span>3D</span></h1>
+      <h1 class="game-title">
+        Drone Defender <span>3D</span>
+      </h1>
       <p class="game-subtitle">
-        Plataforma orbital – Sector Neon-09
+        <span class="subtitle-tag">Plataforma orbital</span> – Sector <span class="subtitle-highlight">Neon-09</span>
       </p>
 
       <div class="overlay-grid">
@@ -56,9 +54,9 @@
         <div class="overlay-panel">
           <h2>Objetivo</h2>
           <ul>
-            <li>Sobrevive el máximo número de oleadas.</li>
-            <li>Los drones te dañan al contacto.</li>
-            <li>Recupera control, muévete y usa las coberturas.</li>
+            <li>Sobrevive el máximo número de <span class="text-wave">oleadas</span>.</li>
+            <li>Los <span class="text-danger">drones</span> te dañan al contacto.</li>
+            <li>Recupera control, muévete y usa las <span class="text-cover">coberturas</span>.</li>
           </ul>
         </div>
 
@@ -68,10 +66,10 @@
           <ul class="controls-list">
             <li><strong>W / A / S / D</strong> – Movimiento</li>
             <li><strong>Ratón</strong> – Mirar / Apuntar</li>
-            <li><strong>Click Izquierdo</strong> – Disparar (automático)</li>
+            <li><strong>Click Izquierdo</strong> – Disparar <span class="text-auto">(automático)</span></li>
             <li><strong>SHIFT Izq.</strong> – Sprint (consume <span class="tag-stamina">stamina</span>)</li>
             <li><strong>ESPACIO</strong> – Saltar (solo al tocar el suelo)</li>
-            <li><strong>F</strong> – Linterna táctica</li>
+            <li><strong>F</strong> – <span class="tag-flashlight">Linterna táctica</span></li>
           </ul>
         </div>
 
@@ -79,8 +77,11 @@
         <div class="overlay-panel full-width">
           <h2>Mecánicas avanzadas</h2>
           <ul>
-            <li>La barra verde muestra tu <strong>vida</strong>.</li>
-            <li>La barra azul muestra tu <strong>stamina de sprint</strong>: se gasta al correr y se regenera al caminar o detenerte.</li>
+            <li>La barra <span class="tag-life">verde</span> muestra tu <strong>vida</strong>.</li>
+            <li>
+              La barra <span class="tag-stamina">azul</span> muestra tu
+              <strong>stamina de sprint</strong>: se gasta al correr y se regenera al caminar o detenerte.
+            </li>
             <li>No puedes saltar en el aire: espera a volver a tocar la plataforma.</li>
             <li>Los drones intentan flanquearte y pueden atascarse momentáneamente tras las coberturas.</li>
           </ul>
@@ -88,7 +89,8 @@
       </div>
 
       <p class="pointer-lock-hint">
-        Tras pulsar <strong>Comenzar</strong>, haz clic en la pantalla de juego para capturar el ratón y entrar en modo vista libre.
+        Tras pulsar <strong>Iniciar misión</strong>, haz clic en la pantalla de juego para
+        capturar el ratón y entrar en modo <span class="text-free-look">vista libre</span>.
       </p>
 
       <button id="start-button" class="primary-btn">
@@ -101,9 +103,13 @@
   <div id="game-over-screen" class="overlay hidden">
     <div class="overlay-content">
       <h2 class="game-over-title">Game Over</h2>
-      <p>Puntuación final: <span id="final-score">0</span></p>
+      <p>
+        Puntuación final:
+        <span id="final-score" class="final-score-highlight">0</span>
+      </p>
       <p class="game-over-subtitle">
-        Los drones han tomado la plataforma… ¿Listo para otro intento?
+        Los <span class="text-danger">drones</span> han tomado la plataforma…
+        ¿Listo para otro intento?
       </p>
       <button id="restart-button" class="primary-btn">
         Reintentar
