@@ -2,6 +2,53 @@
 // DRONE DEFENDER 3D – Shooter básico
 // ----------------------------------------
 
+// Paleta de colores centralizada
+const PALETTE = {
+  bg:        0x050018, // fondo escena
+  fog:       0x050010,
+
+  floor:     0x0b1024,
+  floorEm:   0x141a3a,
+
+  gridMain:  0x00e2ff,
+  gridAlt:   0x0074ff,
+  edge:      0x00ffc8,
+
+  wall:      0x090b1c,
+  wallEm:    0x181c3c,
+
+  column:    0x10152b,
+  columnEm:  0x3b1c70,
+
+  cover:     0x0b1e32,
+  coverEm:   0x093454,
+
+  lowCover:  0x151634,
+  lowCoverEm:0x3b0f52,
+
+  drum:      0xffb84d,
+  drumEm:    0x8a4710,
+
+  sky:       0x04000c,
+
+  weaponBody:   0xa8ff60,
+  weaponBodyEm: 0x335819,
+  weaponGrip:   0x243524,
+  weaponGripEm: 0x0b160b,
+  weaponBarrel: 0x92ff4a,
+  weaponBarrelEm:0x325f14,
+  weaponTop:    0xdfff8a,
+  weaponTopEm:  0x6b7a24,
+
+  enemyBody:   [0xff4c8c, 0xffb84d, 0x5df2ff, 0x9b7bff],
+  enemyEm:     0x320020,   
+  enemyEye:    0x00f3ff,
+  enemyEyeEm:  0x0088aa,
+  enemyEmitter:0x00ffe1
+
+};
+
+
 // Escena básica
 let scene, camera, renderer;
 let ground;
@@ -99,6 +146,8 @@ function init() {
   // Escena
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x120419);
+  scene.fog = new THREE.Fog(PALETTE.fog, 30, 100);
+
 
   // Cámara
   const fov = 75;
@@ -109,21 +158,38 @@ function init() {
   camera.position.set(0, 2, 10);
   camera.rotation.order = "YXZ";
 
-  // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setClearColor(0x08020f, 1);
-  container.appendChild(renderer.domElement);
+// Renderer
+renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
 
-  // Luces, entorno, arma, linterna...
-  createGround();
-  createEnvironment();
-  scene.fog = new THREE.Fog(0x080311, 30, 100);
-  createWeaponLowPoly();
-  createMuzzleFlash();
-  createFlashlight();
-  scene.add(camera);
+// Más físico y con mejor contraste
+renderer.physicallyCorrectLights = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.setClearColor(PALETTE.bg, 1);
+
+// 🔹 IMPORTANTE: montar el canvas en el DOM
+container.appendChild(renderer.domElement);
+
+
+// 🔦 LUCES (solo este bloque, elimina las luces antiguas)
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0x88ccff, 1.0);
+dirLight.position.set(20, 40, 10);
+scene.add(dirLight);
+
+// Luces, entorno, arma, linterna...
+createGround();
+createEnvironment();
+scene.fog = new THREE.Fog(PALETTE.fog, 30, 100);
+createWeaponLowPoly();
+createMuzzleFlash();
+createFlashlight();
+scene.add(camera);
+
 
   // Eventos
   window.addEventListener("resize", onWindowResize);
@@ -212,22 +278,28 @@ function insideBounds(pos) {
 function createGround() {
   const platformGeom = new THREE.BoxGeometry(60, 1, 60);
   const platformMat = new THREE.MeshPhongMaterial({
-    color: 0x1a1024,
-    shininess: 60,
-    emissive: 0x18031f
+    color:    PALETTE.floor,
+    emissive: PALETTE.floorEm,
+    shininess: 70,
+    specular: new THREE.Color(0x88aaff)
   });
   ground = new THREE.Mesh(platformGeom, platformMat);
   ground.position.y = -0.5;
   scene.add(ground);
 
-  const gridHelper = new THREE.GridHelper(56, 28, 0x00f7ff, 0x005a79);
+  const gridHelper = new THREE.GridHelper(
+    56,
+    28,
+    PALETTE.gridMain,
+    PALETTE.gridAlt
+  );
   gridHelper.position.y = 0.01;
   scene.add(gridHelper);
 
   const edgeMat = new THREE.MeshBasicMaterial({
-    color: 0xff00aa,
+    color: PALETTE.edge,
     transparent: true,
-    opacity: 0.55
+    opacity: 0.65
   });
   const edgeGeomX = new THREE.BoxGeometry(56, 0.05, 0.25);
   const edgeGeomZ = new THREE.BoxGeometry(0.25, 0.05, 56);
@@ -245,12 +317,15 @@ function createGround() {
   scene.add(edge1, edge2, edge3, edge4);
 }
 
+
 function createEnvironment() {
+  // Paredes exteriores
   const wallGeom = new THREE.BoxGeometry(62, 4, 0.8);
   const wallMat = new THREE.MeshPhongMaterial({
-    color: 0x120812,
-    emissive: 0x2b0328,
-    shininess: 15
+    color:    PALETTE.wall,
+    emissive: PALETTE.wallEm,
+    shininess: 35,
+    specular: new THREE.Color(0x6677aa)
   });
 
   const wallFront = new THREE.Mesh(wallGeom, wallMat);
@@ -274,11 +349,13 @@ function createEnvironment() {
   scene.add(wallRight);
   registerObstacle(wallRight);
 
+  // Columnas de las esquinas
   const columnGeom = new THREE.CylinderGeometry(0.7, 0.7, 8, 16);
   const columnMat = new THREE.MeshPhongMaterial({
-    color: 0x25152f,
-    emissive: 0x3e0b57,
-    shininess: 40
+    color:    PALETTE.column,
+    emissive: PALETTE.columnEm,
+    shininess: 60,
+    specular: new THREE.Color(0x8899ff)
   });
 
   const cornerPositions = [
@@ -296,19 +373,21 @@ function createEnvironment() {
 
     const stripGeom = new THREE.BoxGeometry(0.2, 6.5, 0.12);
     const stripMat = new THREE.MeshBasicMaterial({
-      color: 0xff5ee1,
+      color: PALETTE.gridMain,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.9
     });
     const strip = new THREE.Mesh(stripGeom, stripMat);
     strip.position.set(x, y, z + 0.4);
     scene.add(strip);
   });
 
+  // Cobertura central y bloques altos
   const coverMat = new THREE.MeshPhongMaterial({
-    color: 0x1a2238,
-    shininess: 25,
-    emissive: 0x051529
+    color:    PALETTE.cover,
+    emissive: PALETTE.coverEm,
+    shininess: 40,
+    specular: new THREE.Color(0x77d1ff)
   });
 
   const centerWallGeom = new THREE.BoxGeometry(14, 2.4, 1.2);
@@ -338,10 +417,13 @@ function createEnvironment() {
   scene.add(block4);
   registerObstacle(block4);
 
+  // Coberturas bajas
   const lowCoverGeom = new THREE.BoxGeometry(3.5, 1.4, 1);
   const lowCoverMat = new THREE.MeshPhongMaterial({
-    color: 0x291b35,
-    emissive: 0x460d50
+    color:    PALETTE.lowCover,
+    emissive: PALETTE.lowCoverEm,
+    shininess: 30,
+    specular: new THREE.Color(0x8866ff)
   });
 
   const lc1 = new THREE.Mesh(lowCoverGeom, lowCoverMat);
@@ -359,11 +441,13 @@ function createEnvironment() {
   scene.add(lc3);
   registerObstacle(lc3);
 
+  // Bidones / tambores
   const drumGeom = new THREE.CylinderGeometry(1.2, 1.2, 2.6, 16);
   const drumMat = new THREE.MeshPhongMaterial({
-    color: 0xff7b29,
-    emissive: 0x7a2d08,
-    shininess: 35
+    color:    PALETTE.drum,
+    emissive: PALETTE.drumEm,
+    shininess: 55,
+    specular: new THREE.Color(0xfff3aa)
   });
 
   const drumsPositions = [
@@ -380,9 +464,10 @@ function createEnvironment() {
     registerObstacle(drum);
   });
 
+  // Cúpula / cielo
   const skyGeom = new THREE.SphereGeometry(140, 32, 32);
   const skyMat = new THREE.MeshBasicMaterial({
-    color: 0x140017,
+    color: PALETTE.sky,
     side: THREE.BackSide
   });
   const sky = new THREE.Mesh(skyGeom, skyMat);
@@ -397,9 +482,10 @@ function createWeaponLowPoly() {
 
   const bodyGeom = new THREE.BoxGeometry(0.2, 0.2, 1.0);
   const bodyMat = new THREE.MeshPhongMaterial({
-    color: 0xd4ff3f,
-    emissive: 0x3a4f0a,
-    shininess: 60
+    color:    PALETTE.weaponBody,
+    emissive: PALETTE.weaponBodyEm,
+    shininess: 80,
+    specular: new THREE.Color(0xccffbb)
   });
   const body = new THREE.Mesh(bodyGeom, bodyMat);
   body.position.set(0, -0.05, -0.3);
@@ -407,8 +493,10 @@ function createWeaponLowPoly() {
 
   const gripGeom = new THREE.BoxGeometry(0.12, 0.25, 0.18);
   const gripMat = new THREE.MeshPhongMaterial({
-    color: 0x224422,
-    emissive: 0x0a1a0a
+    color:    PALETTE.weaponGrip,
+    emissive: PALETTE.weaponGripEm,
+    shininess: 40,
+    specular: new THREE.Color(0x99cc99)
   });
   const grip = new THREE.Mesh(gripGeom, gripMat);
   grip.position.set(0, -0.2, 0.1);
@@ -417,20 +505,23 @@ function createWeaponLowPoly() {
 
   const barrelGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
   const barrelMat = new THREE.MeshPhongMaterial({
-    color: 0xb2ff00,
-    emissive: 0x355f00
+    color:    PALETTE.weaponBarrel,
+    emissive: PALETTE.weaponBarrelEm,
+    shininess: 90,
+    specular: new THREE.Color(0xd9ffb3)
   });
   const barrel = new THREE.Mesh(barrelGeom, barrelMat);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.02, -0.8);
   group.add(barrel);
-
   weaponBarrel = barrel;
 
   const topGeom = new THREE.BoxGeometry(0.08, 0.06, 0.4);
   const topMat = new THREE.MeshPhongMaterial({
-    color: 0xe8ff72,
-    emissive: 0x6b7a17
+    color:    PALETTE.weaponTop,
+    emissive: PALETTE.weaponTopEm,
+    shininess: 75,
+    specular: new THREE.Color(0xf7ffcc)
   });
   const top = new THREE.Mesh(topGeom, topMat);
   top.position.set(0, 0.08, -0.1);
@@ -440,6 +531,7 @@ function createWeaponLowPoly() {
   camera.add(weapon);
   weapon.position.set(0.6, -0.7, -1.5);
 }
+
 
 // Muzzle flash
 function createMuzzleFlash() {
@@ -474,38 +566,48 @@ function toggleFlashlight() {
 // ----------------------------------------
 // SPAWNER DE ENEMIGOS (OLEADAS + DRONES)
 // ----------------------------------------
+// SPAWNER DE ENEMIGOS (OLEADAS + DRONES)
 function spawnEnemy() {
   const drone = new THREE.Group();
 
-  const palette = [
-    0xff4c4c,
-    0xff9f1c,
-    0xff3fd1,
-    0x3ffcff
-  ];
-  const colorHex = palette[(wave - 1) % palette.length];
+  // --- Colores coherentes con la paleta neon ---
+  const bodyPalette = PALETTE.enemyBody; // p.ej. [0x00f7ff, 0x4af2c5, 0xffe15b, 0xff6fb1]
+  const colorHex = bodyPalette[(wave - 1) % bodyPalette.length];
 
-  const bodyGeom = new THREE.SphereGeometry(0.5, 16, 16);
-  const bodyMat = new THREE.MeshPhongMaterial({
-    color: colorHex,
-    emissive: 0x220009,
-    shininess: 90
+  const bodyColor = new THREE.Color(colorHex);
+  const bodyEmissive = bodyColor.clone().multiplyScalar(0.35);
+
+  // --- Cuerpo principal (más “redondo” y con relieve) ---
+  const bodyGeom = new THREE.SphereGeometry(0.5, 24, 24);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: bodyColor,
+    emissive: bodyEmissive,
+    metalness: 0.25,
+    roughness: 0.35
   });
   const body = new THREE.Mesh(bodyGeom, bodyMat);
   body.castShadow = true;
   body.receiveShadow = true;
   drone.add(body);
 
-  const armGeom = new THREE.CylinderGeometry(0.06, 0.06, 1.4, 8);
-  const armMat = new THREE.MeshPhongMaterial({ color: 0x1b1b24 });
+  // --- Brazo central ---
+  const armGeom = new THREE.CylinderGeometry(0.06, 0.06, 1.4, 12);
+  const armMat = new THREE.MeshStandardMaterial({
+    color: 0x060814,
+    metalness: 0.15,
+    roughness: 0.7
+  });
   const arm = new THREE.Mesh(armGeom, armMat);
   arm.rotation.z = Math.PI / 2;
   drone.add(arm);
 
-  const rotorGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.08, 16);
-  const rotorMat = new THREE.MeshPhongMaterial({
-    color: 0x151515,
-    emissive: 0x052025
+  // --- Rotores laterales ---
+  const rotorGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.08, 20);
+  const rotorMat = new THREE.MeshStandardMaterial({
+    color: 0x151822,
+    emissive: 0x04101a,
+    metalness: 0.6,
+    roughness: 0.3
   });
 
   const rotorLeft = new THREE.Mesh(rotorGeom, rotorMat);
@@ -516,21 +618,27 @@ function spawnEnemy() {
   rotorRight.position.set(0.7, 0.25, 0);
   drone.add(rotorRight);
 
-  const camGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.2, 12);
-  const camMat = new THREE.MeshPhongMaterial({
-    color: 0x00f3ff,
-    emissive: 0x007888
+  // --- “Ojo” / cámara frontal ---
+  const camGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.2, 16);
+  const camMat = new THREE.MeshStandardMaterial({
+    color: PALETTE.enemyEye,       // p.ej. 0x7cf4ff
+    emissive: 0x00bcd4,
+    metalness: 0.1,
+    roughness: 0.25
   });
   const cam = new THREE.Mesh(camGeom, camMat);
   cam.rotation.x = Math.PI / 2;
   cam.position.set(0, -0.25, 0.25);
   drone.add(cam);
 
-  const lightGeom = new THREE.SphereGeometry(0.08, 10, 10);
-  const thrusterMat = new THREE.MeshBasicMaterial({
-    color: 0xff5ee1,
+  // --- Propulsores luminosos abajo ---
+  const lightGeom = new THREE.SphereGeometry(0.08, 12, 12);
+  const thrusterMat = new THREE.MeshStandardMaterial({
+    color: PALETTE.enemyEmitter,   // p.ej. 0xff6fb1
+    emissive: PALETTE.enemyEmitter,
+    emissiveIntensity: 1.3,
     transparent: true,
-    opacity: 0.95
+    opacity: 0.9
   });
   const thr1 = new THREE.Mesh(lightGeom, thrusterMat);
   thr1.position.set(-0.3, -0.45, -0.1);
@@ -538,6 +646,7 @@ function spawnEnemy() {
   thr2.position.set(0.3, -0.45, -0.1);
   drone.add(thr1, thr2);
 
+  // --- POSICIONAMIENTO Y LÓGICA (igual que antes) ---
   const basePos =
     SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)];
   const jitterX = (Math.random() - 0.5) * 4;
@@ -790,6 +899,12 @@ function updateWave() {
 function updateHealthBar() {
   const ratio = lives / MAX_LIVES;
   healthFillEl.style.width = `${Math.max(0, ratio) * 100}%`;
+}
+
+function updateStaminaBar() {
+  const ratio = stamina / maxStamina;
+  const clamped = Math.max(0, Math.min(1, ratio));
+  staminaFillEl.style.width = `${clamped * 100}%`;
 }
 
 function startGame() {
