@@ -163,11 +163,21 @@ renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 
+// --- ACTIVAR VR / WEBXR (solo si VRButton está disponible) ---
+if (typeof VRButton !== "undefined") {
+  renderer.xr.enabled = true;
+  document.body.appendChild(VRButton.createButton(renderer));
+} else {
+  renderer.xr.enabled = false; // modo solo PC
+  console.warn("VRButton no disponible; continuando en modo solo PC.");
+}
+
 // Más físico y con mejor contraste
 renderer.physicallyCorrectLights = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.setClearColor(PALETTE.bg, 1);
+
 
 // 🔹 IMPORTANTE: montar el canvas en el DOM
 container.appendChild(renderer.domElement);
@@ -222,8 +232,8 @@ scene.add(camera);
   updateHealthBar();
   updateStaminaBar();   // 👈 aquí la llamamos
 
-  // Bucle
-  animate();
+// Bucle VR
+renderer.setAnimationLoop(animate);
 }
 
 
@@ -924,14 +934,24 @@ function gameOver() {
 }
 
 // ----------------------------------------
+// PARA VR
+// ----------------------------------------
+
+function isXRActive() {
+  return renderer && renderer.xr && renderer.xr.isPresenting;
+}
+
+
+// ----------------------------------------
 // LOOP
 // ----------------------------------------
 function animate() {
-  requestAnimationFrame(animate);
 
   const currentTime = performance.now() / 1000;
   const delta = currentTime - prevTime;
   prevTime = currentTime;
+
+  const xrActive = isXRActive(); // 👈 NUEVO
 
   if (gameState === "playing") {
     if (currentTime - lastSpawnTime > getSpawnInterval()) {
@@ -939,12 +959,15 @@ function animate() {
       lastSpawnTime = currentTime;
     }
 
-    if (pointerLocked) {
+    // 👇 Ahora funciona en desktop y en VR
+    if (pointerLocked || xrActive) {
       movePlayer(delta);
     }
 
     timeSinceLastShot += delta;
-    if (pointerLocked && isShooting && timeSinceLastShot >= FIRE_RATE) {
+
+    // 👇 Igual para el disparo automático
+    if ((pointerLocked || xrActive) && isShooting && timeSinceLastShot >= FIRE_RATE) {
       shootFromCamera();
       timeSinceLastShot = 0;
     }
@@ -957,6 +980,7 @@ function animate() {
 
   renderer.render(scene, camera);
 }
+
 
 // ----------------------------------------
 // MOVIMIENTO JUGADOR CON COLISIÓN
@@ -1174,4 +1198,7 @@ function onWindowResize() {
 // ----------------------------------------
 // INICIO
 // ----------------------------------------
-init();
+// ----------------------------------------
+// INICIO
+// ----------------------------------------
+window.addEventListener("DOMContentLoaded", init);

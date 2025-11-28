@@ -314,6 +314,18 @@ body {
   text-shadow: 0 0 12px #ff5c7a;
 }
 
+/* Corrección para botones sobre el VR Button */
+#start-button {
+  position: relative;
+  z-index: 9999;
+}
+
+#restart-button {
+  position: relative;
+  z-index: 9999;
+}
+
+
 .final-score-highlight {
   color: #00f0ff;
   font-weight: 700;
