@@ -20,11 +20,16 @@ let lives = MAX_LIVES;
 let wave = 1;
 let gameState = "menu"; // "menu" | "playing" | "gameover"
 
+// Disparo automático
+let isShooting = false;
+let timeSinceLastShot = 0;
+const FIRE_RATE = 0.12; // segundos entre disparos (≈ 8 balas/seg)
+
 // Tiempo
 let prevTime = performance.now() / 1000;
 let lastSpawnTime = 0;
 
-// Spawn / dificultad
+// Spawn / dificultad – puntos base de spawn
 const SPAWN_POSITIONS = [
   { x: -20, z: -20 },
   { x: 0, z: -25 },
@@ -119,7 +124,9 @@ function init() {
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
-  document.addEventListener("mousedown", onMouseShoot);
+  document.addEventListener("mousedown", onMouseDownShoot);
+  document.addEventListener("mouseup", onMouseUpShoot);
+
 
   // Botones
   startButtonEl.addEventListener("click", startGame);
@@ -183,7 +190,7 @@ function createWeaponLowPoly() {
   barrel.position.set(0, 0.02, -0.8);
   group.add(barrel);
 
-  // Guardamos referencia al cañón para saber desde dónde salen las balas
+  // Guardamos referencia al cañón para balas
   weaponBarrel = barrel;
 
   // Detalle superior (mira / rail)
@@ -212,34 +219,79 @@ function createMuzzleFlash() {
 }
 
 // ----------------------------------------
-// SPAWNER DE ENEMIGOS (OLEADAS)
+// SPAWNER DE ENEMIGOS (OLEADAS + DRONES)
 // ----------------------------------------
 function spawnEnemy() {
-  const geom = new THREE.SphereGeometry(0.6, 16, 16);
-  const mat = new THREE.MeshPhongMaterial({ color: 0xff5555 });
-  const enemy = new THREE.Mesh(geom, mat);
+  // --- Modelo de DRON low-poly como grupo ---
+  const drone = new THREE.Group();
 
+  // Cuerpo central
+  const bodyGeom = new THREE.SphereGeometry(0.5, 16, 16);
+  const bodyMat = new THREE.MeshPhongMaterial({
+    color: 0xff5555,
+    shininess: 40
+  });
+  const body = new THREE.Mesh(bodyGeom, bodyMat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  drone.add(body);
+
+  // Barra central (brazo)
+  const armGeom = new THREE.CylinderGeometry(0.06, 0.06, 1.4, 8);
+  const armMat = new THREE.MeshPhongMaterial({ color: 0x333333 });
+  const arm = new THREE.Mesh(armGeom, armMat);
+  arm.rotation.z = Math.PI / 2;
+  drone.add(arm);
+
+  // Rotores (discos) izquierda / derecha
+  const rotorGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.08, 12);
+  const rotorMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+
+  const rotorLeft = new THREE.Mesh(rotorGeom, rotorMat);
+  rotorLeft.position.set(-0.7, 0.15, 0);
+  drone.add(rotorLeft);
+
+  const rotorRight = new THREE.Mesh(rotorGeom, rotorMat);
+  rotorRight.position.set(0.7, 0.15, 0);
+  drone.add(rotorRight);
+
+  // Luz frontal / cámara
+  const camGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.16, 12);
+  const camMat = new THREE.MeshPhongMaterial({ color: 0x00ffff });
+  const cam = new THREE.Mesh(camGeom, camMat);
+  cam.rotation.x = Math.PI / 2;
+  cam.position.set(0, -0.25, 0.25);
+  drone.add(cam);
+
+  // Posición inicial
   const basePos = SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)];
   const jitterX = (Math.random() - 0.5) * 4;
   const jitterZ = (Math.random() - 0.5) * 4;
+  drone.position.set(basePos.x + jitterX, 1.5, basePos.z + jitterZ);
 
-  enemy.position.set(basePos.x + jitterX, 1.5, basePos.z + jitterZ);
+  // Dificultad por oleada
+  const speedBase = 4;
+  const speed = speedBase + (wave - 1) * 0.9 + Math.random() * 0.5; // + rápido
+  drone.userData.speed = speed;
 
-  const speed = 4 + (wave - 1) * 0.6;
-  enemy.userData.speed = speed;
-  enemy.userData.time = 0;
-  enemy.userData.bobAmplitude = 0.4 + Math.random() * 0.4;
-  enemy.userData.bobSpeed = 1.5 + Math.random() * 1.0;
+  drone.userData.time = 0;
+  const waveFactor = 1 + 0.08 * (wave - 1); // más nervioso en waves altas
+  drone.userData.bobAmplitude = (0.4 + Math.random() * 0.4) * waveFactor;
+  drone.userData.bobSpeed = (1.5 + Math.random() * 1.0) * waveFactor;
 
-  enemies.push(enemy);
-  scene.add(enemy);
+  // Radio de colisión aproximado
+  drone.userData.hitRadius = 0.9;
+
+  enemies.push(drone);
+  scene.add(drone);
 }
 
-// Intervalo de aparición según oleada
+// Intervalo de aparición según oleada (cada vez más rápido)
 function getSpawnInterval() {
-  const base = 2.0;
-  const min = 0.6;
-  return Math.max(min, base - (wave - 1) * 0.15);
+  const base = 2.2; // segundos
+  const min = 0.4;
+  const factor = Math.pow(0.88, wave - 1); // baja un 12% por oleada
+  return Math.max(min, base * factor);
 }
 
 // Wave según puntuación (cada 10 kills sube)
@@ -248,6 +300,12 @@ function updateWaveFromScore() {
   if (newWave !== wave) {
     wave = newWave;
     updateWave();
+
+    // Pequeño "burst" de bienvenida a la nueva oleada
+    const extra = Math.min(3 + wave, 8);
+    for (let i = 0; i < extra; i++) {
+      spawnEnemy();
+    }
   }
 }
 
@@ -288,9 +346,19 @@ function onKeyUp(event) {
   if (event.code === "KeyD" || event.code === "ArrowRight") keys.d = false;
 }
 
-function onMouseShoot() {
+function onMouseDownShoot(event) {
+  if (event.button !== 0) return; // solo botón izquierdo
   if (!pointerLocked || gameState !== "playing") return;
+
+  isShooting = true;
+  // Opcional: disparo inmediato al empezar a pulsar
   shootFromCamera();
+  timeSinceLastShot = 0;
+}
+
+function onMouseUpShoot(event) {
+  if (event.button !== 0) return;
+  isShooting = false;
 }
 
 // ----------------------------------------
@@ -298,7 +366,9 @@ function onMouseShoot() {
 // ----------------------------------------
 function shootFromCamera() {
   // Dirección hacia delante
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+  const direction = new THREE.Vector3(0, 0, -1)
+    .applyQuaternion(camera.quaternion)
+    .normalize();
 
   // Origen en la punta del cañón
   const origin = new THREE.Vector3();
@@ -320,7 +390,7 @@ function spawnBullet(origin, direction) {
   bullet.position.copy(origin);
   bullet.userData.direction = direction.clone();
   bullet.userData.speed = 60; // velocidad de la bala
-  bullet.userData.life = 0;   // tiempo de vida
+  bullet.userData.life = 0; // tiempo de vida
 
   bullets.push(bullet);
   scene.add(bullet);
@@ -344,12 +414,13 @@ function updateBullets(delta) {
       continue;
     }
 
-    // Colisión con enemigos (distancia simple)
+    // Colisión con enemigos
     let hit = false;
     for (let j = enemies.length - 1; j >= 0; j--) {
       const enemy = enemies[j];
       const dist = bullet.position.distanceTo(enemy.position);
-      const hitRadius = 0.6 + 0.1; // radio enemigo + bullet
+      const enemyRadius = enemy.userData.hitRadius ?? 0.7;
+      const hitRadius = enemyRadius + 0.12; // radio enemigo + bullet
 
       if (dist < hitRadius) {
         destroyEnemy(enemy);
@@ -455,27 +526,35 @@ function animate() {
   prevTime = currentTime;
 
   if (gameState === "playing") {
-    // Spawn enemigos
-    if (currentTime - lastSpawnTime > getSpawnInterval()) {
-      spawnEnemy();
-      lastSpawnTime = currentTime;
-    }
-
-    // Movimiento jugador
-    if (pointerLocked) {
-      movePlayer(delta);
-    }
-
-    // Enemigos
-    updateEnemies(delta, currentTime);
-
-    // Balas
-    updateBullets(delta);
-
-    // Efectos
-    updateMuzzleFlash(delta);
-    updateDeathEffects(delta);
+  // Spawn enemigos
+  if (currentTime - lastSpawnTime > getSpawnInterval()) {
+    spawnEnemy();
+    lastSpawnTime = currentTime;
   }
+
+  // Movimiento jugador
+  if (pointerLocked) {
+    movePlayer(delta);
+  }
+
+  // 🔥 FUEGO AUTOMÁTICO
+  timeSinceLastShot += delta;
+  if (pointerLocked && isShooting && timeSinceLastShot >= FIRE_RATE) {
+    shootFromCamera();
+    timeSinceLastShot = 0;
+  }
+
+  // Enemigos
+  updateEnemies(delta, currentTime);
+
+  // Balas
+  updateBullets(delta);
+
+  // Efectos
+  updateMuzzleFlash(delta);
+  updateDeathEffects(delta);
+}
+
 
   renderer.render(scene, camera);
 }
@@ -518,8 +597,12 @@ function updateEnemies(delta, currentTime) {
     enemy.position.addScaledVector(dir, enemy.userData.speed * delta);
 
     // Zig-zag lateral
-    const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
-    const sway = Math.sin(enemy.userData.time * enemy.userData.bobSpeed) * enemy.userData.bobAmplitude;
+    const side = new THREE.Vector3()
+      .crossVectors(dir, new THREE.Vector3(0, 1, 0))
+      .normalize();
+    const sway =
+      Math.sin(enemy.userData.time * enemy.userData.bobSpeed) *
+      enemy.userData.bobAmplitude;
     enemy.position.addScaledVector(side, sway * delta * 4.0);
 
     // Flotación vertical ligera
