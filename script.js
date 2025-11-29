@@ -98,20 +98,24 @@ const FIRE_RATE = 0.12; // segundos entre disparos (≈ 8 balas/seg)
 let prevTime = performance.now() / 1000;
 let lastSpawnTime = 0;
 
-// Spawn / dificultad – puntos base de spawn
+// Spawn / dificultad – puntos base de spawn (actualizado para arena más grande)
 const SPAWN_POSITIONS = [
-  { x: -24, z: -24 },
-  { x: 0,   z: -25 },
-  { x: 24,  z: -24 },
-  { x: -24, z: 24 },
-  { x: 0,   z: 25 },
-  { x: 24,  z: 24 },
-  { x: -25, z: 0 },
-  { x: 25,  z: 0 }
+  { x: -40, z: -40 },
+  { x: 0,   z: -42 },
+  { x: 40,  z: -40 },
+  { x: -40, z: 40 },
+  { x: 0,   z: 42 },
+  { x: 40,  z: 40 },
+  { x: -42, z: 0 },
+  { x: 42,  z: 0 },
+  { x: -28, z: -28 },
+  { x: 28,  z: -28 },
+  { x: -28, z: 28 },
+  { x: 28,  z: 28 }
 ];
 
-// Límite “jugable” del mapa (dentro de la plataforma)
-const ARENA_LIMIT = 27;
+// Límite "jugable" del mapa (dentro de la plataforma) - ARENA AMPLIADA
+const ARENA_LIMIT = 45;
 
 // Cámara FPS (pointer lock)
 let pointerLocked = false;
@@ -146,7 +150,7 @@ function init() {
   // Escena
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x120419);
-  scene.fog = new THREE.Fog(PALETTE.fog, 30, 100);
+  scene.fog = new THREE.Fog(PALETTE.fog, 40, 150); // Niebla ajustada para arena más grande
 
 
   // Cámara
@@ -155,7 +159,7 @@ function init() {
   const near = 0.1;
   const far = 1000;
   camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-  camera.position.set(0, 2, 10);
+  camera.position.set(0, 2.5, 10); // Altura inicial aumentada
   camera.rotation.order = "YXZ";
 
 // Renderer
@@ -183,7 +187,7 @@ renderer.setClearColor(PALETTE.bg, 1);
 container.appendChild(renderer.domElement);
 
 
-// 🔦 LUCES (solo este bloque, elimina las luces antiguas)
+// LUCES (solo este bloque, elimina las luces antiguas)
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
 scene.add(ambientLight);
 
@@ -194,7 +198,7 @@ scene.add(dirLight);
 // Luces, entorno, arma, linterna...
 createGround();
 createEnvironment();
-scene.fog = new THREE.Fog(PALETTE.fog, 30, 100);
+scene.fog = new THREE.Fog(PALETTE.fog, 40, 150); // Niebla ajustada
 createWeaponLowPoly();
 createMuzzleFlash();
 createFlashlight();
@@ -230,7 +234,7 @@ scene.add(camera);
   updateLives();
   updateWave();
   updateHealthBar();
-  updateStaminaBar();   // 👈 aquí la llamamos
+  updateStaminaBar();
 
 // Bucle VR
 renderer.setAnimationLoop(animate);
@@ -240,37 +244,215 @@ renderer.setAnimationLoop(animate);
 // ----------------------------------------
 // REGISTRO DE OBSTÁCULOS / COLISIÓN
 // ----------------------------------------
-function registerObstacle(mesh) {
+function registerObstacle(mesh, options = {}) {
   const params = mesh.geometry.parameters || {};
-  let halfX, halfZ;
+  let halfX, halfZ, halfHeight;
 
   if (params.width && params.depth) {
-    // BoxGeometry
-    halfX = params.width / 2;
-    halfZ = params.depth / 2;
+    // BoxGeometry - considerar escala
+    const scaleX = mesh.scale ? mesh.scale.x : 1;
+    const scaleZ = mesh.scale ? mesh.scale.z : 1;
+    const scaleY = mesh.scale ? mesh.scale.y : 1;
+    
+    const width = params.width * scaleX;
+    const depth = params.depth * scaleZ;
+    const height = params.height * scaleY;
+    
+    halfX = width / 2;
+    halfZ = depth / 2;
+    halfHeight = height / 2;
   } else if (params.radiusTop || params.radiusBottom) {
     // CylinderGeometry
-    const r = Math.max(params.radiusTop || 0, params.radiusBottom || 0);
+    const scaleX = mesh.scale ? mesh.scale.x : 1;
+    const scaleY = mesh.scale ? mesh.scale.y : 1;
+    
+    const r = Math.max(params.radiusTop || 0, params.radiusBottom || 0) * scaleX;
+    const height = params.height * scaleY;
+    
     halfX = r;
     halfZ = r;
+    halfHeight = height / 2;
   } else {
     // Fallback
     halfX = 1;
     halfZ = 1;
+    halfHeight = 1;
   }
 
-  obstacles.push({ mesh, halfX, halfZ });
+  obstacles.push({ 
+    mesh, 
+    halfX, 
+    halfZ,
+    halfHeight,  // Guardar altura para colisiones verticales
+    jumpable: options.jumpable || false  // Si es true, se puede saltar sobre él
+  });
 }
 
-function collidesWithObstacles(pos, radius) {
+// Función para obtener la altura de la plataforma más alta bajo el jugador
+function getPlatformHeightUnderPlayer(posX, posZ, radius) {
+  let maxPlatformTop = null;
+  
   for (const o of obstacles) {
-    const dx = Math.abs(pos.x - o.mesh.position.x);
-    const dz = Math.abs(pos.z - o.mesh.position.z);
+    if (!o.jumpable) continue; // Solo plataformas saltables
+    
+    const dx = Math.abs(posX - o.mesh.position.x);
+    const dz = Math.abs(posZ - o.mesh.position.z);
+    
+    // Verificar si está sobre la plataforma horizontalmente
     if (dx < (o.halfX + radius) && dz < (o.halfZ + radius)) {
-      return true;
+      if (o.halfHeight !== undefined) {
+        const platformTop = o.mesh.position.y + o.halfHeight;
+        if (maxPlatformTop === null || platformTop > maxPlatformTop) {
+          maxPlatformTop = platformTop;
+        }
+      }
     }
   }
-  return false;
+  
+  return maxPlatformTop;
+}
+
+function collidesWithObstacles(pos, radius, checkHeight = true) {
+  // Normalizar pos a objeto con x, y, z
+  const posX = pos.x !== undefined ? pos.x : (pos.get ? pos.get('x') : 0);
+  const posY = pos.y !== undefined ? pos.y : (pos.get ? pos.get('y') : 0);
+  const posZ = pos.z !== undefined ? pos.z : (pos.get ? pos.get('z') : 0);
+  
+  // Altura del jugador/enemigo (centro del cuerpo)
+  const playerHeight = checkHeight ? posY : 1.8;
+  const playerRadius = radius;
+  
+  // El jugador/enemigo tiene una altura aproximada de 1.6 unidades
+  const playerTop = playerHeight + 0.8;   // Parte superior (cabeza)
+  const playerBottom = playerHeight - 0.8; // Parte inferior (pies)
+  
+  for (const o of obstacles) {
+    // Calcular distancia horizontal desde el centro del obstáculo
+    const dx = Math.abs(posX - o.mesh.position.x);
+    const dz = Math.abs(posZ - o.mesh.position.z);
+    
+    // COLISIÓN HORIZONTAL: Siempre verificar (no se puede atravesar lateralmente)
+    const collisionXZ = (dx < (o.halfX + playerRadius)) && (dz < (o.halfZ + playerRadius));
+    
+    if (collisionXZ) {
+      if (o.halfHeight !== undefined) {
+        const obstacleTop = o.mesh.position.y + o.halfHeight;
+        const obstacleBottom = o.mesh.position.y - o.halfHeight;
+        
+        // TODOS LOS OBSTÁCULOS SON SALTABLES (excepto paredes exteriores que no tienen jumpable)
+        if (o.jumpable) {
+          // Si está COMPLETAMENTE ENCIMA (pies por encima del top), NO colisiona verticalmente
+          // Pero SÍ colisiona horizontalmente si intenta atravesar lateralmente
+          if (playerBottom > obstacleTop + 0.1) {
+            // Está encima, no colisiona verticalmente, pero sigue colisionando horizontalmente
+            // Esto se maneja en el movimiento horizontal, no aquí
+            continue; // No colisiona verticalmente
+          }
+          
+          // Si está dentro o debajo del obstáculo verticalmente, colisiona
+          if (playerBottom <= obstacleTop && playerTop > obstacleBottom) {
+            return { collides: true, isRamp: false, onTop: false };
+          }
+        } else {
+          // OBSTÁCULOS SÓLIDOS (solo paredes exteriores): Siempre colisionan
+          if (playerBottom < obstacleTop && playerTop > obstacleBottom) {
+            return { collides: true, isRamp: false, onTop: false };
+          }
+        }
+      } else {
+        // Si no hay altura definida, asumir que es un obstáculo bajo (suelo)
+        if (playerBottom <= o.mesh.position.y + 0.5) {
+          return { collides: true, isRamp: false, onTop: false };
+        }
+      }
+    }
+  }
+  
+  // Verificar si está sobre una plataforma saltable
+  const platformHeight = getPlatformHeightUnderPlayer(posX, posZ, playerRadius);
+  // El jugador está sobre la plataforma si su parte inferior está cerca o por encima del top de la plataforma
+  // Con el nuevo offset de 1.1, playerBottom debería estar alrededor de platformHeight + 0.3
+  const isOnPlatform = platformHeight !== null && playerBottom >= platformHeight - 0.3 && playerBottom <= platformHeight + 0.5;
+  
+  return { collides: false, isRamp: false, onTop: isOnPlatform };
+}
+
+// Función para empujar al jugador fuera de un obstáculo si está atrapado
+function pushPlayerOutOfObstacle(pos, radius) {
+  const posX = pos.x !== undefined ? pos.x : (pos.get ? pos.get('x') : 0);
+  const posY = pos.y !== undefined ? pos.y : (pos.get ? pos.get('y') : 0);
+  const posZ = pos.z !== undefined ? pos.z : (pos.get ? pos.get('z') : 0);
+  
+  const collision = collidesWithObstacles(pos, radius, true);
+  if (!collision.collides) {
+    // Si no hay colisión, verificar que esté dentro de los límites
+    if (insideBounds(pos)) {
+      return pos.clone();
+    }
+  }
+  
+  // Si está colisionando o fuera de límites, encontrar la dirección de escape más cercana
+  let bestPos = null;
+  let minDist = Infinity;
+  
+  // Probar múltiples distancias y direcciones
+  const distances = [radius + 1, radius + 2, radius + 3, radius + 5];
+  const directions = [
+    { x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 },
+    { x: 0.707, z: 0.707 }, { x: -0.707, z: 0.707 },
+    { x: 0.707, z: -0.707 }, { x: -0.707, z: -0.707 }
+  ];
+  
+  for (const dist of distances) {
+    for (const dir of directions) {
+      const testPos = new THREE.Vector3(
+        posX + dir.x * dist,
+        posY,
+        posZ + dir.z * dist
+      );
+      
+      // Verificar colisiones y límites
+      const testCollision = collidesWithObstacles(testPos, radius, true);
+      if (!testCollision.collides && insideBounds(testPos)) {
+        const testDist = testPos.distanceTo(pos);
+        if (testDist < minDist) {
+          minDist = testDist;
+          bestPos = testPos;
+        }
+      }
+    }
+    
+    // Si encontramos una posición válida, usarla
+    if (bestPos) break;
+  }
+  
+  // Si no se encontró posición, usar una posición por defecto segura
+  if (!bestPos) {
+    // Buscar posición segura lejos del centro
+    const safePositions = [
+      { x: 10, y: posY, z: 10 },
+      { x: -10, y: posY, z: 10 },
+      { x: 10, y: posY, z: -10 },
+      { x: -10, y: posY, z: -10 },
+      { x: 15, y: posY, z: 0 },
+      { x: -15, y: posY, z: 0 },
+      { x: 0, y: posY, z: 15 },
+      { x: 0, y: posY, z: -15 }
+    ];
+    
+    for (const safePos of safePositions) {
+      const testPos = new THREE.Vector3(safePos.x, safePos.y, safePos.z);
+      const testCollision = collidesWithObstacles(testPos, radius, true);
+      if (!testCollision.collides && insideBounds(testPos)) {
+        return testPos;
+      }
+    }
+    
+    // Último recurso: posición por defecto
+    return new THREE.Vector3(10, posY, 10);
+  }
+  
+  return bestPos;
 }
 
 function insideBounds(pos) {
@@ -286,7 +468,8 @@ function insideBounds(pos) {
 // ESCENARIO / ENTORNO
 // ----------------------------------------
 function createGround() {
-  const platformGeom = new THREE.BoxGeometry(60, 1, 60);
+  // Plataforma ampliada a 100x100
+  const platformGeom = new THREE.BoxGeometry(100, 1, 100);
   const platformMat = new THREE.MeshPhongMaterial({
     color:    PALETTE.floor,
     emissive: PALETTE.floorEm,
@@ -297,9 +480,10 @@ function createGround() {
   ground.position.y = -0.5;
   scene.add(ground);
 
+  // Grid más grande
   const gridHelper = new THREE.GridHelper(
-    56,
-    28,
+    90,
+    45,
     PALETTE.gridMain,
     PALETTE.gridAlt
   );
@@ -311,26 +495,30 @@ function createGround() {
     transparent: true,
     opacity: 0.65
   });
-  const edgeGeomX = new THREE.BoxGeometry(56, 0.05, 0.25);
-  const edgeGeomZ = new THREE.BoxGeometry(0.25, 0.05, 56);
+  const edgeGeomX = new THREE.BoxGeometry(90, 0.05, 0.25);
+  const edgeGeomZ = new THREE.BoxGeometry(0.25, 0.05, 90);
 
   const edge1 = new THREE.Mesh(edgeGeomX, edgeMat);
-  edge1.position.set(0, 0.05, 28);
+  edge1.position.set(0, 0.05, 45);
   const edge2 = edge1.clone();
-  edge2.position.set(0, 0.05, -28);
+  edge2.position.set(0, 0.05, -45);
 
   const edge3 = new THREE.Mesh(edgeGeomZ, edgeMat);
-  edge3.position.set(28, 0.05, 0);
+  edge3.position.set(45, 0.05, 0);
   const edge4 = edge3.clone();
-  edge4.position.set(-28, 0.05, 0);
+  edge4.position.set(-45, 0.05, 0);
 
   scene.add(edge1, edge2, edge3, edge4);
 }
 
 
 function createEnvironment() {
-  // Paredes exteriores
-  const wallGeom = new THREE.BoxGeometry(62, 4, 0.8);
+  // ============================================
+  // DISEÑO COMPLETAMENTE NUEVO - LABERINTO TÁCTICO
+  // Todos los obstáculos son SÓLIDOS e INTRANSITABLES
+  // ============================================
+
+  // Material base para obstáculos
   const wallMat = new THREE.MeshPhongMaterial({
     color:    PALETTE.wall,
     emissive: PALETTE.wallEm,
@@ -338,61 +526,6 @@ function createEnvironment() {
     specular: new THREE.Color(0x6677aa)
   });
 
-  const wallFront = new THREE.Mesh(wallGeom, wallMat);
-  wallFront.position.set(0, 1.5, -30.4);
-  scene.add(wallFront);
-  registerObstacle(wallFront);
-
-  const wallBack = wallFront.clone();
-  wallBack.position.set(0, 1.5, 30.4);
-  scene.add(wallBack);
-  registerObstacle(wallBack);
-
-  const wallSideGeom = new THREE.BoxGeometry(0.8, 4, 62);
-  const wallLeft = new THREE.Mesh(wallSideGeom, wallMat);
-  wallLeft.position.set(-30.4, 1.5, 0);
-  scene.add(wallLeft);
-  registerObstacle(wallLeft);
-
-  const wallRight = wallLeft.clone();
-  wallRight.position.set(30.4, 1.5, 0);
-  scene.add(wallRight);
-  registerObstacle(wallRight);
-
-  // Columnas de las esquinas
-  const columnGeom = new THREE.CylinderGeometry(0.7, 0.7, 8, 16);
-  const columnMat = new THREE.MeshPhongMaterial({
-    color:    PALETTE.column,
-    emissive: PALETTE.columnEm,
-    shininess: 60,
-    specular: new THREE.Color(0x8899ff)
-  });
-
-  const cornerPositions = [
-    [-26, 4, -26],
-    [26, 4, -26],
-    [-26, 4, 26],
-    [26, 4, 26]
-  ];
-
-  cornerPositions.forEach(([x, y, z]) => {
-    const col = new THREE.Mesh(columnGeom, columnMat);
-    col.position.set(x, y, z);
-    scene.add(col);
-    registerObstacle(col);
-
-    const stripGeom = new THREE.BoxGeometry(0.2, 6.5, 0.12);
-    const stripMat = new THREE.MeshBasicMaterial({
-      color: PALETTE.gridMain,
-      transparent: true,
-      opacity: 0.9
-    });
-    const strip = new THREE.Mesh(stripGeom, stripMat);
-    strip.position.set(x, y, z + 0.4);
-    scene.add(strip);
-  });
-
-  // Cobertura central y bloques altos
   const coverMat = new THREE.MeshPhongMaterial({
     color:    PALETTE.cover,
     emissive: PALETTE.coverEm,
@@ -400,59 +533,13 @@ function createEnvironment() {
     specular: new THREE.Color(0x77d1ff)
   });
 
-  const centerWallGeom = new THREE.BoxGeometry(14, 2.4, 1.2);
-  const centerWall = new THREE.Mesh(centerWallGeom, coverMat);
-  centerWall.position.set(0, 1.2, 0);
-  scene.add(centerWall);
-  registerObstacle(centerWall);
-
-  const blockGeom = new THREE.BoxGeometry(4.5, 2.4, 3);
-  const block1 = new THREE.Mesh(blockGeom, coverMat);
-  block1.position.set(-12, 1.2, -8);
-  scene.add(block1);
-  registerObstacle(block1);
-
-  const block2 = block1.clone();
-  block2.position.set(-18, 1.2, 4);
-  scene.add(block2);
-  registerObstacle(block2);
-
-  const block3 = block1.clone();
-  block3.position.set(12, 1.2, 8);
-  scene.add(block3);
-  registerObstacle(block3);
-
-  const block4 = block1.clone();
-  block4.position.set(18, 1.2, -4);
-  scene.add(block4);
-  registerObstacle(block4);
-
-  // Coberturas bajas
-  const lowCoverGeom = new THREE.BoxGeometry(3.5, 1.4, 1);
-  const lowCoverMat = new THREE.MeshPhongMaterial({
-    color:    PALETTE.lowCover,
-    emissive: PALETTE.lowCoverEm,
-    shininess: 30,
-    specular: new THREE.Color(0x8866ff)
+  const columnMat = new THREE.MeshPhongMaterial({
+    color:    PALETTE.column,
+    emissive: PALETTE.columnEm,
+    shininess: 60,
+    specular: new THREE.Color(0x8899ff)
   });
 
-  const lc1 = new THREE.Mesh(lowCoverGeom, lowCoverMat);
-  lc1.position.set(-4, 0.7, -10);
-  scene.add(lc1);
-  registerObstacle(lc1);
-
-  const lc2 = lc1.clone();
-  lc2.position.set(4, 0.7, -10);
-  scene.add(lc2);
-  registerObstacle(lc2);
-
-  const lc3 = lc1.clone();
-  lc3.position.set(0, 0.7, -14);
-  scene.add(lc3);
-  registerObstacle(lc3);
-
-  // Bidones / tambores
-  const drumGeom = new THREE.CylinderGeometry(1.2, 1.2, 2.6, 16);
   const drumMat = new THREE.MeshPhongMaterial({
     color:    PALETTE.drum,
     emissive: PALETTE.drumEm,
@@ -460,22 +547,207 @@ function createEnvironment() {
     specular: new THREE.Color(0xfff3aa)
   });
 
-  const drumsPositions = [
-    [-10, 0, 14],
-    [10, 0, 16],
-    [16, 0, -16],
-    [-16, 0, -14]
+  // 1. PAREDES EXTERIORES (sólidas)
+  const wallGeom = new THREE.BoxGeometry(102, 4, 0.8);
+  const wallFront = new THREE.Mesh(wallGeom, wallMat);
+  wallFront.position.set(0, 1.5, -50.4);
+  scene.add(wallFront);
+  registerObstacle(wallFront);
+
+  const wallBack = wallFront.clone();
+  wallBack.position.set(0, 1.5, 50.4);
+  scene.add(wallBack);
+  registerObstacle(wallBack);
+
+  const wallSideGeom = new THREE.BoxGeometry(0.8, 4, 102);
+  const wallLeft = new THREE.Mesh(wallSideGeom, wallMat);
+  wallLeft.position.set(-50.4, 1.5, 0);
+  scene.add(wallLeft);
+  registerObstacle(wallLeft);
+
+  const wallRight = wallLeft.clone();
+  wallRight.position.set(50.4, 1.5, 0);
+  scene.add(wallRight);
+  registerObstacle(wallRight);
+
+  // 2. ESTRUCTURA EN FORMA DE CRUZ CENTRAL (diseño nuevo) - SALTABLES
+  // Brazo horizontal (altura aumentada)
+  const crossH = new THREE.Mesh(new THREE.BoxGeometry(35, 3.5, 2.5), coverMat);
+  crossH.position.set(0, 1.75, 0);
+  scene.add(crossH);
+  registerObstacle(crossH, { jumpable: true }); // Se puede saltar sobre ella
+
+  // Brazo vertical (altura aumentada)
+  const crossV = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3.5, 35), coverMat);
+  crossV.position.set(0, 1.75, 0);
+  scene.add(crossV);
+  registerObstacle(crossV, { jumpable: true }); // Se puede saltar sobre ella
+
+  // 3. CUATRO PLATAFORMAS ELEVADAS EN LAS ESQUINAS (SALTABLES) - Altura aumentada
+  const platformGeom = new THREE.BoxGeometry(12, 2.2, 12);
+  const platformPositions = [
+    [-30, 1.1, -30],
+    [30, 1.1, -30],
+    [-30, 1.1, 30],
+    [30, 1.1, 30]
   ];
 
-  drumsPositions.forEach(([x, y, z]) => {
-    const drum = new THREE.Mesh(drumGeom, drumMat);
-    drum.position.set(x, y + 1.3, z);
-    scene.add(drum);
-    registerObstacle(drum);
+  platformPositions.forEach(([x, y, z]) => {
+    const platform = new THREE.Mesh(platformGeom, coverMat);
+    platform.position.set(x, y, z);
+    scene.add(platform);
+    registerObstacle(platform, { jumpable: true }); // Se puede saltar sobre ellas
+  });
+  
+  // 3b. PLATAFORMAS BAJAS SALTABLES (adicionales) - Altura aumentada
+  const lowPlatformGeom = new THREE.BoxGeometry(6, 1.2, 6);
+  const lowPlatformPositions = [
+    [-20, 0.6, -20], [20, 0.6, -20],
+    [-20, 0.6, 20], [20, 0.6, 20],
+    [0, 0.6, -25], [0, 0.6, 25],
+    [-25, 0.6, 0], [25, 0.6, 0]
+  ];
+  
+  lowPlatformPositions.forEach(([x, y, z]) => {
+    const lowPlatform = new THREE.Mesh(lowPlatformGeom, coverMat);
+    lowPlatform.position.set(x, y, z);
+    scene.add(lowPlatform);
+    registerObstacle(lowPlatform, { jumpable: true }); // Se puede saltar sobre ellas
   });
 
-  // Cúpula / cielo
-  const skyGeom = new THREE.SphereGeometry(140, 32, 32);
+  // 4. MURALLAS TÁCTICAS (formando pasillos) - SALTABLES - Altura aumentada
+  const barrierGeom = new THREE.BoxGeometry(8, 3.2, 1.5);
+  const barrierPositions = [
+    // Norte
+    [-15, 1.6, -20], [15, 1.6, -20],
+    [-15, 1.6, -25], [15, 1.6, -25],
+    // Sur
+    [-15, 1.6, 20], [15, 1.6, 20],
+    [-15, 1.6, 25], [15, 1.6, 25],
+    // Este
+    [20, 1.6, -15], [20, 1.6, 15],
+    [25, 1.6, -15], [25, 1.6, 15],
+    // Oeste
+    [-20, 1.6, -15], [-20, 1.6, 15],
+    [-25, 1.6, -15], [-25, 1.6, 15]
+  ];
+
+  barrierPositions.forEach(([x, y, z]) => {
+    const barrier = new THREE.Mesh(barrierGeom, coverMat);
+    barrier.position.set(x, y, z);
+    scene.add(barrier);
+    registerObstacle(barrier, { jumpable: true }); // Se puede saltar sobre ellas
+  });
+
+  // 5. COLUMNAS ESTRATÉGICAS (distribuidas uniformemente) - Altura aumentada
+  const columnGeom = new THREE.CylinderGeometry(1.2, 1.2, 5.0, 16);
+  const columnPositions = [
+    // Anillo exterior (más espaciado)
+    [-38, 2.5, -20], [-38, 2.5, 20],
+    [38, 2.5, -20], [38, 2.5, 20],
+    [-20, 2.5, -38], [20, 2.5, -38],
+    [-20, 2.5, 38], [20, 2.5, 38],
+    // Anillo medio (mejor distribuido)
+    [-25, 2.5, -25], [25, 2.5, -25],
+    [-25, 2.5, 25], [25, 2.5, 25],
+    [-25, 2.5, 0], [25, 2.5, 0],
+    [0, 2.5, -25], [0, 2.5, 25],
+    // Zona central (más espaciadas)
+    [-15, 2.5, -15], [15, 2.5, -15],
+    [-15, 2.5, 15], [15, 2.5, 15],
+    // Zonas intermedias
+    [-30, 2.5, -10], [30, 2.5, -10],
+    [-30, 2.5, 10], [30, 2.5, 10],
+    [-10, 2.5, -30], [10, 2.5, -30],
+    [-10, 2.5, 30], [10, 2.5, 30]
+  ];
+
+  columnPositions.forEach(([x, y, z]) => {
+    const col = new THREE.Mesh(columnGeom, columnMat);
+    col.position.set(x, y, z);
+    scene.add(col);
+    registerObstacle(col, { jumpable: true }); // Se puede saltar sobre ellas
+
+    // Efecto luminoso en columnas (ajustado a nueva altura)
+    const stripGeom = new THREE.BoxGeometry(0.15, 5.2, 0.1);
+    const stripMat = new THREE.MeshBasicMaterial({
+      color: PALETTE.gridMain,
+      transparent: true,
+      opacity: 0.8
+    });
+    const strip = new THREE.Mesh(stripGeom, stripMat);
+    strip.position.set(x, y, z + 0.6);
+    scene.add(strip);
+  });
+
+  // 6. BLOQUES DE COBERTURA (distribuidos estratégicamente) - Altura aumentada
+  const blockGeom = new THREE.BoxGeometry(5, 3.0, 3);
+  const blockPositions = [
+    // Zona norte
+    [-25, 1.5, -15], [25, 1.5, -15],
+    [-8, 1.5, -18], [8, 1.5, -18],
+    // Zona sur
+    [-25, 1.5, 15], [25, 1.5, 15],
+    [-8, 1.5, 18], [8, 1.5, 18],
+    // Zona este
+    [15, 1.5, -25], [15, 1.5, 25],
+    [18, 1.5, -8], [18, 1.5, 8],
+    // Zona oeste
+    [-15, 1.5, -25], [-15, 1.5, 25],
+    [-18, 1.5, -8], [-18, 1.5, 8]
+  ];
+
+  blockPositions.forEach(([x, y, z]) => {
+    const block = new THREE.Mesh(blockGeom, coverMat);
+    block.position.set(x, y, z);
+    scene.add(block);
+    registerObstacle(block, { jumpable: true }); // Se puede saltar sobre ellas
+  });
+
+  // 7. TAMBORES/BARRILES (obstáculos circulares) - Altura aumentada
+  const drumGeom = new THREE.CylinderGeometry(1.5, 1.5, 4.0, 16);
+  const drumPositions = [
+    // Patrones en grupos
+    [-22, 2.0, -22], [-18, 2.0, -22], [-22, 2.0, -18],
+    [22, 2.0, 22], [18, 2.0, 22], [22, 2.0, 18],
+    [-22, 2.0, 22], [-18, 2.0, 22], [-22, 2.0, 18],
+    [22, 2.0, -22], [18, 2.0, -22], [22, 2.0, -18],
+    // Líneas centrales
+    [-12, 2.0, 0], [12, 2.0, 0],
+    [0, 2.0, -12], [0, 2.0, 12]
+  ];
+
+  drumPositions.forEach(([x, y, z]) => {
+    const drum = new THREE.Mesh(drumGeom, drumMat);
+    drum.position.set(x, y, z);
+    scene.add(drum);
+    registerObstacle(drum, { jumpable: true }); // Se puede saltar sobre ellas
+  });
+
+  // 8. MUROS EN L (formando esquinas de cobertura) - Altura aumentada
+  const lWallGeom = new THREE.BoxGeometry(6, 3.3, 1.5);
+  const lWallPositions = [
+    // Esquinas interiores
+    [-12, 1.65, -12], [12, 1.65, -12],
+    [-12, 1.65, 12], [12, 1.65, 12]
+  ];
+
+  lWallPositions.forEach(([x, y, z]) => {
+    // Muro horizontal
+    const wallH = new THREE.Mesh(lWallGeom, coverMat);
+    wallH.position.set(x, y, z);
+    scene.add(wallH);
+    registerObstacle(wallH, { jumpable: true }); // Se puede saltar sobre ellas
+
+    // Muro vertical
+    const wallV = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.3, 6), coverMat);
+    wallV.position.set(x, y, z);
+    scene.add(wallV);
+    registerObstacle(wallV, { jumpable: true }); // Se puede saltar sobre ellas
+  });
+
+  // 9. CÚPULA / CIELO
+  const skyGeom = new THREE.SphereGeometry(180, 32, 32);
   const skyMat = new THREE.MeshBasicMaterial({
     color: PALETTE.sky,
     side: THREE.BackSide
@@ -656,21 +928,57 @@ function spawnEnemy() {
   thr2.position.set(0.3, -0.45, -0.1);
   drone.add(thr1, thr2);
 
-  // --- POSICIONAMIENTO Y LÓGICA (igual que antes) ---
+  // --- POSICIONAMIENTO Y LÓGICA (mejorado para nueva arena) ---
   const basePos =
     SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)];
-  const jitterX = (Math.random() - 0.5) * 4;
-  const jitterZ = (Math.random() - 0.5) * 4;
+  
+  let spawnX, spawnZ;
+  let attempts = 0;
+  const maxAttempts = 30;
+  let validSpawn = false;
 
-  let spawnX = basePos.x + jitterX;
-  let spawnZ = basePos.z + jitterZ;
+  // Buscar una posición válida sin colisiones
+  while (!validSpawn && attempts < maxAttempts) {
+    const jitterX = (Math.random() - 0.5) * 8;
+    const jitterZ = (Math.random() - 0.5) * 8;
+    
+    spawnX = basePos.x + jitterX;
+    spawnZ = basePos.z + jitterZ;
 
-  const margin = 1.5;
-  const limit = ARENA_LIMIT - margin;
-  if (spawnX >  limit) spawnX =  limit;
-  if (spawnX < -limit) spawnX = -limit;
-  if (spawnZ >  limit) spawnZ =  limit;
-  if (spawnZ < -limit) spawnZ = -limit;
+    const margin = 2.0;
+    const limit = ARENA_LIMIT - margin;
+    if (spawnX >  limit) spawnX =  limit;
+    if (spawnX < -limit) spawnX = -limit;
+    if (spawnZ >  limit) spawnZ =  limit;
+    if (spawnZ < -limit) spawnZ = -limit;
+
+    // Verificar que no spawnee dentro de un obstáculo
+    const spawnTest = { x: spawnX, y: 2.5, z: spawnZ };
+    const collision = collidesWithObstacles(spawnTest, ENEMY_RADIUS + 1.0, true);
+    
+    if (!collision.collides && insideBounds(spawnTest)) {
+      validSpawn = true;
+    } else {
+      attempts++;
+      // Si falla, probar otra posición base
+      if (attempts % 5 === 0) {
+        const newBasePos = SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)];
+        spawnX = newBasePos.x;
+        spawnZ = newBasePos.z;
+      }
+    }
+  }
+
+  // Si después de todos los intentos no hay posición válida, usar la posición base
+  if (!validSpawn) {
+    spawnX = basePos.x;
+    spawnZ = basePos.z;
+    // Intentar empujar fuera de obstáculos
+    const spawnPos = new THREE.Vector3(spawnX, 2.5, spawnZ);
+    const safePos = pushPlayerOutOfObstacle(spawnPos, ENEMY_RADIUS + 1.0);
+    spawnX = safePos.x;
+    spawnZ = safePos.z;
+  }
 
   drone.position.set(spawnX, 1.8, spawnZ);
 
@@ -808,6 +1116,39 @@ function spawnBullet(origin, direction) {
   scene.add(bullet);
 }
 
+// Función para verificar si una bala colisiona con un obstáculo
+function bulletCollidesWithObstacle(bulletPos) {
+  const bulletRadius = 0.08; // Radio de la bala
+  const posX = bulletPos.x;
+  const posY = bulletPos.y;
+  const posZ = bulletPos.z;
+
+  for (const o of obstacles) {
+    const dx = Math.abs(posX - o.mesh.position.x);
+    const dz = Math.abs(posZ - o.mesh.position.z);
+
+    // Verificar colisión horizontal
+    if (dx < (o.halfX + bulletRadius) && dz < (o.halfZ + bulletRadius)) {
+      if (o.halfHeight !== undefined) {
+        const obstacleTop = o.mesh.position.y + o.halfHeight;
+        const obstacleBottom = o.mesh.position.y - o.halfHeight;
+
+        // Verificar colisión vertical
+        if (posY >= obstacleBottom && posY <= obstacleTop) {
+          return true; // La bala colisiona con el obstáculo
+        }
+      } else {
+        // Si no hay altura definida, verificar si está cerca del centro
+        if (Math.abs(posY - o.mesh.position.y) < 0.5) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false; // No hay colisión
+}
+
 function updateBullets(delta) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const bullet = bullets[i];
@@ -824,6 +1165,14 @@ function updateBullets(delta) {
       continue;
     }
 
+    // Verificar colisión con obstáculos primero
+    if (bulletCollidesWithObstacle(bullet.position)) {
+      scene.remove(bullet);
+      bullets.splice(i, 1);
+      continue; // La bala fue destruida por un obstáculo
+    }
+
+    // Verificar colisión con enemigos
     let hit = false;
     for (let j = enemies.length - 1; j >= 0; j--) {
       const enemy = enemies[j];
@@ -923,6 +1272,42 @@ function startGame() {
   startScreenEl.classList.add("hidden");
   prevTime = performance.now() / 1000;
   lastSpawnTime = prevTime - getSpawnInterval();
+  
+  // Buscar una posición inicial segura (no dentro de obstáculos)
+  // Intentar varias posiciones alrededor del centro
+      const safePositions = [
+        { x: 0, y: 2.5, z: 5 },   // Norte del centro
+        { x: 0, y: 2.5, z: -5 },  // Sur del centro
+        { x: 5, y: 2.5, z: 0 },   // Este del centro
+        { x: -5, y: 2.5, z: 0 },  // Oeste del centro
+        { x: 8, y: 2.5, z: 8 },   // Diagonal
+        { x: -8, y: 2.5, z: 8 },  // Diagonal
+        { x: 8, y: 2.5, z: -8 },  // Diagonal
+        { x: -8, y: 2.5, z: -8 }  // Diagonal
+      ];
+  
+  let foundSafePos = false;
+  for (const pos of safePositions) {
+    const testPos = new THREE.Vector3(pos.x, pos.y, pos.z);
+    const collision = collidesWithObstacles(testPos, PLAYER_RADIUS, true);
+    if (!collision.collides && insideBounds(testPos)) {
+      camera.position.set(pos.x, pos.y, pos.z);
+      foundSafePos = true;
+      break;
+    }
+  }
+  
+  // Si no se encontró posición segura, usar pushPlayerOutOfObstacle
+  if (!foundSafePos) {
+    const playerStartPos = new THREE.Vector3(0, 2.5, 5);
+    const safePos = pushPlayerOutOfObstacle(playerStartPos, PLAYER_RADIUS);
+    camera.position.set(safePos.x, safePos.y, safePos.z);
+  }
+  
+  // Resetear estado del jugador
+  velocityY = 0;
+  isGrounded = true;
+  stamina = maxStamina;
 }
 
 function gameOver() {
@@ -1029,73 +1414,348 @@ function movePlayer(delta) {
   const currentPos = camera.position.clone();
   let newPos = currentPos.clone();
 
-  // Eje X
-  const tryX = new THREE.Vector3(
-    currentPos.x + move.x,
-    currentPos.y,
-    currentPos.z
-  );
-  if (!collidesWithObstacles(tryX, PLAYER_RADIUS) && insideBounds(tryX)) {
-    newPos.x = tryX.x;
+  // MOVIMIENTO HORIZONTAL - PERMITIR CAMINAR SOBRE PLATAFORMAS
+  // Verificar si está sobre alguna plataforma para permitir movimiento libre horizontal
+  
+  // Detectar plataformas bajo el jugador
+  const currentPlatformHeight = getPlatformHeightUnderPlayer(currentPos.x, currentPos.z, PLAYER_RADIUS);
+  const isOnPlatform = currentPlatformHeight !== null && (currentPos.y - 0.8) >= (currentPlatformHeight - 0.2);
+  
+  // Intentar movimiento en X primero
+  if (Math.abs(move.x) > 0.001) {
+    const tryX = new THREE.Vector3(
+      currentPos.x + move.x,
+      currentPos.y,
+      currentPos.z
+    );
+    
+    // Verificar colisión horizontal
+    let canMoveX = true;
+    for (const o of obstacles) {
+      const dx = Math.abs(tryX.x - o.mesh.position.x);
+      const dz = Math.abs(tryX.z - o.mesh.position.z);
+      
+      // Colisión horizontal: está dentro del área del obstáculo
+      if (dx < (o.halfX + PLAYER_RADIUS) && dz < (o.halfZ + PLAYER_RADIUS)) {
+        if (o.halfHeight !== undefined) {
+          const obstacleTop = o.mesh.position.y + o.halfHeight;
+          const playerBottom = currentPos.y - 0.8;
+          const playerTop = currentPos.y + 0.8;
+          
+          // Si está sobre la plataforma (pies encima del top), puede moverse libremente
+          if (o.jumpable && playerBottom > obstacleTop + 0.05) {
+            // Está completamente encima, puede caminar sobre ella
+            continue;
+          } else if (o.jumpable && isOnPlatform && playerBottom >= obstacleTop - 0.2) {
+            // Está sobre una plataforma (puede estar ligeramente dentro por ajustes), permitir movimiento
+            continue;
+          } else {
+            // Está dentro o debajo, no puede atravesar lateralmente
+            // PERO si está sobre otra plataforma y esta es más baja, permitir
+            if (isOnPlatform && currentPlatformHeight > obstacleTop) {
+              // Está sobre una plataforma más alta, puede pasar sobre esta más baja
+              continue;
+            }
+            canMoveX = false;
+            break;
+          }
+        } else {
+          // Sin altura definida, bloquear movimiento
+          canMoveX = false;
+          break;
+        }
+      }
+    }
+    
+    if (canMoveX && insideBounds(tryX)) {
+      newPos.x = tryX.x;
+    }
   }
 
-  // Eje Z
-  const tryZ = new THREE.Vector3(
-    newPos.x,
-    currentPos.y,
-    currentPos.z + move.z
-  );
-  if (!collidesWithObstacles(tryZ, PLAYER_RADIUS) && insideBounds(tryZ)) {
-    newPos.z = tryZ.z;
+  // Intentar movimiento en Z (usando la nueva posición X si se movió)
+  if (Math.abs(move.z) > 0.001) {
+    const tryZ = new THREE.Vector3(
+      newPos.x,
+      currentPos.y,
+      currentPos.z + move.z
+    );
+    
+    // Verificar colisión horizontal
+    let canMoveZ = true;
+    for (const o of obstacles) {
+      const dx = Math.abs(tryZ.x - o.mesh.position.x);
+      const dz = Math.abs(tryZ.z - o.mesh.position.z);
+      
+      if (dx < (o.halfX + PLAYER_RADIUS) && dz < (o.halfZ + PLAYER_RADIUS)) {
+        if (o.halfHeight !== undefined) {
+          const obstacleTop = o.mesh.position.y + o.halfHeight;
+          const playerBottom = currentPos.y - 0.8;
+          const playerTop = currentPos.y + 0.8;
+          
+          // Si está sobre la plataforma (pies encima del top), puede moverse libremente
+          if (o.jumpable && playerBottom > obstacleTop + 0.05) {
+            // Está completamente encima, puede caminar sobre ella
+            continue;
+          } else if (o.jumpable && isOnPlatform && playerBottom >= obstacleTop - 0.2) {
+            // Está sobre una plataforma, permitir movimiento
+            continue;
+          } else {
+            // Está dentro o debajo, no puede atravesar lateralmente
+            // PERO si está sobre otra plataforma y esta es más baja, permitir
+            if (isOnPlatform && currentPlatformHeight > obstacleTop) {
+              // Está sobre una plataforma más alta, puede pasar sobre esta más baja
+              continue;
+            }
+            canMoveZ = false;
+            break;
+          }
+        } else {
+          canMoveZ = false;
+          break;
+        }
+      }
+    }
+    
+    if (canMoveZ && insideBounds(tryZ)) {
+      newPos.z = tryZ.z;
+    }
   }
 
-  // SALTO / GRAVEDAD
+  // SALTO / GRAVEDAD MEJORADO - MÁS FLUIDO
   velocityY += gravity * delta;
   let nextY = camera.position.y + velocityY * delta;
 
-  const groundLevel = 1.8;
-
-  if (nextY <= groundLevel) {
+  const groundLevel = 2.5; // Altura aumentada del suelo
+  
+  // Detectar la plataforma más alta bajo el jugador
+  const platformHeight = getPlatformHeightUnderPlayer(newPos.x, newPos.z, PLAYER_RADIUS);
+  
+  // Calcular altura objetivo (suelo o plataforma)
+  let targetHeight = groundLevel;
+  if (platformHeight !== null) {
+    targetHeight = platformHeight + 1.1; // Centro del jugador sobre la plataforma (aumentado para mejor visibilidad)
+  }
+  
+  // Verificar colisiones verticales con TODOS los obstáculos
+  const testPosVertical = new THREE.Vector3(newPos.x, nextY, newPos.z);
+  let maxObstacleTop = targetHeight;
+  let shouldLandOnPlatform = false;
+  
+  for (const o of obstacles) {
+    const dx = Math.abs(newPos.x - o.mesh.position.x);
+    const dz = Math.abs(newPos.z - o.mesh.position.z);
+    
+    // Verificar colisión horizontal
+    if (dx < (o.halfX + PLAYER_RADIUS) && dz < (o.halfZ + PLAYER_RADIUS)) {
+      if (o.halfHeight !== undefined) {
+        const obstacleTop = o.mesh.position.y + o.halfHeight;
+        const obstacleBottom = o.mesh.position.y - o.halfHeight;
+        const playerBottom = nextY - 0.8;
+        const playerTop = nextY + 0.8;
+        
+        // Verificar solapamiento vertical
+        if (playerBottom < obstacleTop && playerTop > obstacleBottom) {
+          if (o.jumpable) {
+            // OBSTÁCULO SALTABLE: Solo colisiona si está dentro o debajo
+            // Si está cayendo y está cerca de la parte superior, aterrizar encima
+            if (velocityY <= 0 && playerBottom <= obstacleTop + 0.15 && playerBottom >= obstacleTop - 0.3) {
+              // Aterrizar sobre la plataforma
+              maxObstacleTop = Math.max(maxObstacleTop, obstacleTop + 1.1);
+              shouldLandOnPlatform = true;
+            } else if (playerBottom < obstacleTop - 0.1) {
+              // Está dentro del obstáculo, empujar hacia arriba
+              maxObstacleTop = Math.max(maxObstacleTop, obstacleTop + 1.1);
+              velocityY = Math.max(0, velocityY);
+            }
+            // Si está completamente encima (playerBottom > obstacleTop), no hacer nada
+          } else {
+            // OBSTÁCULO SÓLIDO (solo paredes): Siempre colisiona
+            if (playerBottom < obstacleTop && playerTop > obstacleBottom) {
+              if (nextY < obstacleTop) {
+                // Estamos debajo, mantener en suelo/plataforma
+                maxObstacleTop = Math.max(maxObstacleTop, targetHeight);
+              } else {
+                // Estamos dentro o encima, empujar hacia arriba
+                maxObstacleTop = Math.max(maxObstacleTop, obstacleTop + 1.1);
+                velocityY = Math.max(0, velocityY);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Aplicar altura calculada de forma FLUIDA (sin cortes bruscos)
+  const landingThreshold = 0.15; // Umbral para aterrizaje suave
+  
+  // Si está saltando activamente, no forzar aterrizaje
+  const isActivelyJumping = velocityY > 0.5;
+  
+  if (shouldLandOnPlatform && !isActivelyJumping) {
+    // Aterrizar sobre plataforma de forma suave (solo si no está saltando)
+    if (Math.abs(nextY - maxObstacleTop) < landingThreshold && velocityY <= 0) {
+      nextY = maxObstacleTop;
+      velocityY = 0;
+      isGrounded = true;
+    } else if (velocityY <= 0) {
+      // Está cayendo hacia la plataforma
+      const diff = maxObstacleTop - nextY;
+      if (diff > 0 && diff < landingThreshold * 2) {
+        // Acelerar hacia la plataforma suavemente
+        velocityY = Math.min(velocityY, diff * 5);
+      }
+      isGrounded = false;
+    } else {
+      // Está saltando, permitir movimiento libre
+      isGrounded = false;
+    }
+  } else if (platformHeight !== null && velocityY <= 0 && nextY <= targetHeight + landingThreshold && !isActivelyJumping) {
+    // Está cerca de una plataforma y cayendo (no saltando)
+    if (Math.abs(nextY - targetHeight) < landingThreshold) {
+      nextY = targetHeight;
+      velocityY = 0;
+      isGrounded = true;
+    } else {
+      // Aún no ha llegado, continuar cayendo
+      isGrounded = false;
+    }
+  } else if (nextY <= groundLevel && velocityY <= 0) {
+    // Aterrizar en suelo (solo si está cayendo)
     nextY = groundLevel;
     velocityY = 0;
     isGrounded = true;
-  } else {
+  } else if (nextY < maxObstacleTop - 0.1 && !isActivelyJumping) {
+    // Está por debajo de un obstáculo, empujar hacia arriba suavemente (solo si no está saltando)
+    const diff = maxObstacleTop - nextY;
+    if (diff < 0.3) {
+      // Muy cerca, ajustar suavemente
+      nextY = maxObstacleTop;
+      velocityY = Math.max(0, velocityY * 0.5);
+    } else {
+      // Más lejos, aplicar fuerza hacia arriba
+      velocityY = Math.max(0, velocityY) + diff * 2;
+    }
     isGrounded = false;
+  } else {
+    // En el aire o saltando
+    // Verificar si está sobre una plataforma para establecer isGrounded
+    if (platformHeight !== null && velocityY <= 0.1) {
+      const playerBottom = nextY - 0.8;
+      // Con el nuevo offset de 1.1, playerBottom debería estar alrededor de platformHeight + 0.3
+      if (playerBottom >= platformHeight - 0.3 && playerBottom <= platformHeight + 0.5) {
+        // Está sobre la plataforma, ajustar altura si es necesario
+        const expectedHeight = platformHeight + 1.1;
+        if (Math.abs(nextY - expectedHeight) < 0.2) {
+          nextY = expectedHeight; // Ajustar a la altura correcta
+        }
+        isGrounded = true;
+      } else {
+        isGrounded = false;
+      }
+    } else {
+      isGrounded = false;
+    }
   }
 
-  camera.position.set(newPos.x, nextY, newPos.z);
+  // Verificar colisiones finales - FLUIDO Y PERMITIR SALTO
+  const finalPos = new THREE.Vector3(newPos.x, nextY, newPos.z);
+  const finalCollision = collidesWithObstacles(finalPos, PLAYER_RADIUS, true);
+  
+  // Si está saltando (velocityY > 0), no forzar altura - permitir movimiento libre
+  const isJumping = velocityY > 0.1;
+  
+  // Si está sobre una plataforma, mantenerlo ahí y permitir caminar horizontalmente
+  if (finalCollision.onTop && !isJumping) {
+    // Está sobre una plataforma saltable y NO está saltando
+    const finalPlatformHeight = getPlatformHeightUnderPlayer(newPos.x, newPos.z, PLAYER_RADIUS);
+    if (finalPlatformHeight !== null) {
+      const platformTop = finalPlatformHeight + 1.1; // Altura aumentada sobre plataformas
+      const playerBottom = nextY - 0.8;
+      
+      // Si está sobre la plataforma (dentro de un rango razonable), mantener altura constante
+      // Con el offset de 1.1, playerBottom debería estar alrededor de finalPlatformHeight + 0.3
+      if (playerBottom >= finalPlatformHeight - 0.3 && playerBottom <= finalPlatformHeight + 0.5) {
+        // Está sobre la plataforma, mantener altura constante mientras camina
+        // Esto permite caminar horizontalmente sobre la plataforma
+        camera.position.set(newPos.x, platformTop, newPos.z);
+        velocityY = 0; // Detener velocidad vertical
+        isGrounded = true; // Asegurar que isGrounded esté activo para permitir saltar
+      } else if (playerBottom < finalPlatformHeight - 0.3) {
+        // Está cayendo hacia la plataforma o dentro, ajustar a la altura correcta
+        if (velocityY <= 0) {
+          camera.position.set(newPos.x, platformTop, newPos.z);
+          velocityY = 0;
+          isGrounded = true;
+        } else {
+          // Está saltando, permitir movimiento libre
+          camera.position.set(newPos.x, nextY, newPos.z);
+        }
+      } else {
+        // Está por encima del rango, permitir movimiento libre (puede estar saltando)
+        camera.position.set(newPos.x, nextY, newPos.z);
+      }
+    } else {
+      camera.position.set(newPos.x, nextY, newPos.z);
+    }
+  } else if (finalCollision.onTop && isJumping) {
+    // Está saltando desde una plataforma, permitir movimiento libre
+    camera.position.set(newPos.x, nextY, newPos.z);
+  } else if (finalCollision.collides) {
+    // Hay colisión - verificar si es un obstáculo sólido (solo paredes)
+    let isSolidObstacle = false;
+    for (const o of obstacles) {
+      if (o.jumpable) continue; // Ignorar saltables
+      
+      const dx = Math.abs(newPos.x - o.mesh.position.x);
+      const dz = Math.abs(newPos.z - o.mesh.position.z);
+      if (dx < (o.halfX + PLAYER_RADIUS) && dz < (o.halfZ + PLAYER_RADIUS)) {
+        const playerBottom = nextY - 0.8;
+        const obstacleTop = o.mesh.position.y + (o.halfHeight || 2);
+        if (playerBottom < obstacleTop && nextY + 0.8 > (o.mesh.position.y - (o.halfHeight || 2))) {
+          isSolidObstacle = true;
+          break;
+        }
+      }
+    }
+    
+    if (isSolidObstacle) {
+      // Es un obstáculo sólido (pared), intentar empujarlo fuera
+      const safePos = pushPlayerOutOfObstacle(finalPos, PLAYER_RADIUS);
+      const safeCollision = collidesWithObstacles(safePos, PLAYER_RADIUS, true);
+      if (!safeCollision.collides && insideBounds(safePos)) {
+        camera.position.set(safePos.x, safePos.y, safePos.z);
+      } else {
+        // Mantener posición actual si es válida
+        const currentCollision = collidesWithObstacles(currentPos, PLAYER_RADIUS, true);
+        if (!currentCollision.collides || currentCollision.onTop) {
+          camera.position.set(currentPos.x, currentPos.y, currentPos.z);
+        } else {
+          camera.position.set(safePos.x, safePos.y, safePos.z);
+        }
+      }
+    } else {
+      // No es sólido, probablemente está sobre una plataforma, mantener posición
+      camera.position.set(newPos.x, nextY, newPos.z);
+    }
+  } else {
+    // No hay colisión, mover normalmente
+    camera.position.set(newPos.x, nextY, newPos.z);
+  }
 }
 
 // ----------------------------------------
-// ENEMIGOS CON COLISIÓN
+// ENEMIGOS CON COLISIÓN MEJORADA
 // ----------------------------------------
 function updateEnemies(delta, currentTime) {
   for (let i = enemies.length - 1; i >= 0; i--) {
     const enemy = enemies[i];
 
-    // Anti-atasco: si lleva mucho tiempo sin moverse, darle un empujón lateral
+    // Inicializar datos de tracking
     if (!enemy.userData.lastPos) enemy.userData.lastPos = enemy.position.clone();
     if (!enemy.userData.stuckTime) enemy.userData.stuckTime = 0;
-
-    const movedDist = enemy.position.distanceTo(enemy.userData.lastPos);
-
-    if (movedDist < 0.05) {
-      enemy.userData.stuckTime += delta;
-    } else {
-      enemy.userData.stuckTime = 0;
-      enemy.userData.lastPos.copy(enemy.position);
-    }
-
-    if (enemy.userData.stuckTime > 0.3) {
-      const nudge = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        0,
-        (Math.random() - 0.5) * 2
-      ).normalize().multiplyScalar(2);
-
-      enemy.position.add(nudge);
-      enemy.userData.stuckTime = 0;
-    }
+    if (!enemy.userData.pathHistory) enemy.userData.pathHistory = [];
+    if (!enemy.userData.avoidanceDir) enemy.userData.avoidanceDir = new THREE.Vector3();
 
     enemy.userData.time += delta;
 
@@ -1106,32 +1766,143 @@ function updateEnemies(delta, currentTime) {
     const dist = dir.length();
     dir.normalize();
 
-    const side = new THREE.Vector3()
-      .crossVectors(dir, new THREE.Vector3(0, 1, 0))
-      .normalize();
-    const sway =
-      Math.sin(enemy.userData.time * enemy.userData.bobSpeed) *
-      enemy.userData.bobAmplitude;
-
-    let newPos = enemy.position.clone();
-    newPos.addScaledVector(dir, enemy.userData.speed * delta);
-    newPos.addScaledVector(side, sway * delta * 4.0);
-    newPos.y = 1.8 + Math.sin(enemy.userData.time * 1.5) * 0.3;
-
-    if (!collidesWithObstacles(newPos, ENEMY_RADIUS) && insideBounds(newPos)) {
-      enemy.position.copy(newPos);
+    // MEJORADO: Sistema anti-atasco más robusto
+    const movedDist = enemy.position.distanceTo(enemy.userData.lastPos);
+    if (movedDist < 0.03) {
+      enemy.userData.stuckTime += delta;
     } else {
-      let altPos = enemy.position.clone();
-      altPos.addScaledVector(dir, enemy.userData.speed * delta);
-      altPos.y = newPos.y;
-      if (
-        !collidesWithObstacles(altPos, ENEMY_RADIUS) &&
-        insideBounds(altPos)
-      ) {
-        enemy.position.copy(altPos);
+      enemy.userData.stuckTime = Math.max(0, enemy.userData.stuckTime - delta * 2);
+      enemy.userData.lastPos.copy(enemy.position);
+    }
+
+    // MEJORADO: Detección de obstáculos cercanos para evasión
+    let avoidance = new THREE.Vector3();
+    const avoidanceRadius = 3.5;
+    let obstacleCount = 0;
+
+    for (const o of obstacles) {
+      // TODOS LOS OBSTÁCULOS SON SÓLIDOS - todos deben evitarse
+      const toObstacle = new THREE.Vector3(
+        o.mesh.position.x - enemy.position.x,
+        0,
+        o.mesh.position.z - enemy.position.z
+      );
+      const obstacleDist = toObstacle.length();
+      
+      if (obstacleDist < avoidanceRadius && obstacleDist > 0.1) {
+        const pushStrength = 1.0 - (obstacleDist / avoidanceRadius);
+        toObstacle.normalize().multiplyScalar(-pushStrength);
+        avoidance.add(toObstacle);
+        obstacleCount++;
       }
     }
 
+    if (obstacleCount > 0) {
+      avoidance.divideScalar(obstacleCount);
+      avoidance.normalize();
+    }
+
+    // MEJORADO: Flanqueo más inteligente
+    const side = new THREE.Vector3()
+      .crossVectors(dir, new THREE.Vector3(0, 1, 0))
+      .normalize();
+    
+    // Alternar dirección de flanqueo basado en tiempo
+    const swayDir = Math.sin(enemy.userData.time * enemy.userData.bobSpeed) > 0 ? 1 : -1;
+    const sway = swayDir * enemy.userData.bobAmplitude;
+
+    // MEJORADO: Combinar dirección hacia jugador con evasión
+    let moveDir = dir.clone();
+    if (avoidance.length() > 0.1) {
+      moveDir.lerp(avoidance, 0.3); // 30% evasión, 70% persecución
+    }
+    moveDir.normalize();
+
+    // Aplicar movimiento con flanqueo
+    let newPos = enemy.position.clone();
+    const baseMove = moveDir.clone().multiplyScalar(enemy.userData.speed * delta);
+    const sideMove = side.clone().multiplyScalar(sway * delta * 3.0);
+    
+    newPos.add(baseMove);
+    newPos.add(sideMove);
+    newPos.y = 1.8 + Math.sin(enemy.userData.time * 1.5) * 0.3;
+
+    // MEJORADO: Sistema de pathfinding mejorado
+    const collision = collidesWithObstacles(newPos, ENEMY_RADIUS, true);
+    
+    if (!collision.collides && insideBounds(newPos)) {
+      enemy.position.copy(newPos);
+      enemy.userData.stuckTime = Math.max(0, enemy.userData.stuckTime - delta);
+    } else {
+      // Si hay colisión, intentar alternativas
+      const alternatives = [
+        // Intentar solo movimiento directo sin flanqueo
+        enemy.position.clone().addScaledVector(moveDir, enemy.userData.speed * delta),
+        // Intentar movimiento lateral
+        enemy.position.clone().addScaledVector(side, enemy.userData.speed * delta * 0.7),
+        // Intentar movimiento en ángulo
+        enemy.position.clone().addScaledVector(
+          moveDir.clone().add(side.clone().multiplyScalar(0.5)).normalize(),
+          enemy.userData.speed * delta * 0.8
+        )
+      ];
+
+      let moved = false;
+      for (const altPos of alternatives) {
+        altPos.y = newPos.y;
+        const altCollision = collidesWithObstacles(altPos, ENEMY_RADIUS, true);
+        if (!altCollision.collides && insideBounds(altPos)) {
+          enemy.position.copy(altPos);
+          moved = true;
+          break;
+        }
+      }
+
+      // Si sigue atascado, usar sistema de escape mejorado
+      if (!moved && enemy.userData.stuckTime > 0.2) {
+        // Calcular dirección de escape basada en obstáculos cercanos
+        let escapeDir = new THREE.Vector3();
+        for (const o of obstacles) {
+          // TODOS LOS OBSTÁCULOS SON SÓLIDOS
+          const toEnemy = new THREE.Vector3().subVectors(enemy.position, o.mesh.position);
+          toEnemy.y = 0;
+          if (toEnemy.length() < 5) {
+            toEnemy.normalize();
+            escapeDir.add(toEnemy);
+          }
+        }
+        
+        if (escapeDir.length() > 0.1) {
+          escapeDir.normalize();
+          const escapePos = enemy.position.clone().addScaledVector(escapeDir, enemy.userData.speed * delta * 1.5);
+          escapePos.y = newPos.y;
+          const escapeCollision = collidesWithObstacles(escapePos, ENEMY_RADIUS, true);
+          if (!escapeCollision.collides && insideBounds(escapePos)) {
+            enemy.position.copy(escapePos);
+            enemy.userData.stuckTime = 0;
+            moved = true;
+          }
+        }
+
+        // Último recurso: teleportación lateral pequeña
+        if (!moved && enemy.userData.stuckTime > 0.5) {
+          const randomNudge = new THREE.Vector3(
+            (Math.random() - 0.5) * 3,
+            0,
+            (Math.random() - 0.5) * 3
+          );
+          const nudgePos = enemy.position.clone().add(randomNudge);
+          nudgePos.y = newPos.y;
+          const nudgeCollision = collidesWithObstacles(nudgePos, ENEMY_RADIUS, true);
+          if (!nudgeCollision.collides && insideBounds(nudgePos)) {
+            enemy.position.copy(nudgePos);
+            enemy.userData.stuckTime = 0;
+          }
+        }
+      }
+    }
+
+    // Rotación de rotores
     if (enemy.userData.rotors) {
       const spin = 12 * delta * (1 + 0.08 * (wave - 1));
       enemy.userData.rotors.forEach((r) => {
@@ -1139,8 +1910,10 @@ function updateEnemies(delta, currentTime) {
       });
     }
 
+    // Mirar al jugador
     enemy.lookAt(playerPos);
 
+    // Daño al contacto
     const finalDist = enemy.position.distanceTo(playerPos);
     if (finalDist < 1.5) {
       destroyEnemy(enemy);
