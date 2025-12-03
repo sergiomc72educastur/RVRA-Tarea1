@@ -1,3 +1,7 @@
+# Probar el juego
+
+https://sergiomc72educastur.github.io/RVRA-Tarea1/
+
 # 🎮 Drone Defender 3D
 
 Un juego de disparos en primera persona (FPS) desarrollado con Three.js, donde debes defenderte de oleadas de drones en una plataforma orbital futurista.
